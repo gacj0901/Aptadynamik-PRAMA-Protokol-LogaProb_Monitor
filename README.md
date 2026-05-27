@@ -1,2 +1,61 @@
-# Aptadynamik-Logoprobs-PRAMA-Protokol
-AptadynamiK / PRAMA Protokol: structural viability monitoring for LLM generation trajectories using logprob-derived dynamics. Tracks coherence, tension, regime transitions, and loss of adaptive margin.
+# AptadynamiK - PRAMA Protokol
+// G.A.C.J. 
+// Copyright © 2026 — Trade Secret registered with U.S. Copyright Office
+
+
+PRAMA Protokol monitors the structural viability of LLM generation trajectories from token-level uncertainty signals. It maps local generation signals such as logprob gaps and entropy into the PRAMA core state, then records trajectory variables including integrity, xi, lambda, regime, and anomaly index.
+
+This repository is organized as a Python package under `src/aptadynamik`.
+
+## Install
+
+```bash
+python -m pip install -e .
+```
+
+For the Gemini demo:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+## Offline Verification
+
+```bash
+prama-verify
+```
+
+or:
+
+```bash
+python examples/run_offline_verify.py
+```
+
+The offline run writes `results/results.json` and should report `4/4 tests passed`.
+
+## Gemini Pipeline
+
+Set an API key and run:
+
+```bash
+export GEMINI_API_KEY="your-key"
+prama-gemini
+```
+
+PowerShell:
+
+```powershell
+$env:GEMINI_API_KEY="your-key"
+prama-gemini
+```
+
+The Gemini pipeline writes timestamped JSON and CSV outputs to `results/`.
+
+## Documentation
+
+- `docs/quickstart.md`
+- `docs/method.md`
+- `docs/logprob_mapping.md`
+- `docs/failure_modes.md`
+- `docs/philosophy.md`
+
