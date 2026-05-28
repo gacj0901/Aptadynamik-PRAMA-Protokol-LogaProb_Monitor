@@ -1,5 +1,5 @@
 """
-PRAMA Protokol — Pipeline Gemini (GRATIS)
+PRAMA Protokol - Pipeline Gemini (GRATIS)
 ==========================================
 Conecta Gemini API free tier (con logprobs) al motor PRAMA.
 
@@ -15,7 +15,7 @@ USO:
      export GEMINI_API_KEY="tu-key-aqui"
      prama-gemini
 
-COSTO: $0.00 — free tier, sin tarjeta, sin límite de tiempo.
+COSTO: $0.00 - free tier, sin tarjeta, sin límite de tiempo.
 """
 
 import os, json, math, csv, time
@@ -24,9 +24,9 @@ from datetime import datetime
 
 from aptadynamik.prama_core import CoreConfig, CoreState
 
-# ══════════════════════════════════════════════════
+# ==================================================
 # CONFIGURACIÓN
-# ══════════════════════════════════════════════════
+# ==================================================
 
 MODEL = "gemini-2.5-flash"   # Free tier: 10 RPM, 250 RPD
 TOP_LOGPROBS = 5
@@ -48,9 +48,9 @@ def make_config():
     cfg.regime_geometry.theta_0 = 0.5
     return cfg
 
-# ══════════════════════════════════════════════════
+# ==================================================
 # EXTRACCIÓN DE SEÑALES
-# ══════════════════════════════════════════════════
+# ==================================================
 
 def extract_signals(logprobs_result):
     """Extrae señales por token desde logprobs de Gemini."""
@@ -103,7 +103,7 @@ def extract_signals(logprobs_result):
 
 
 def window_aggregate(signals, window_size=WINDOW_SIZE):
-    """Agrega señales por ventanas → (dynamic_input, symbolic_input)."""
+    """Agrega señales por ventanas -> (dynamic_input, symbolic_input)."""
     windows = []
     max_gap = 5.0
 
@@ -131,9 +131,9 @@ def window_aggregate(signals, window_size=WINDOW_SIZE):
     return windows
 
 
-# ══════════════════════════════════════════════════
+# ==================================================
 # PROMPTS
-# ══════════════════════════════════════════════════
+# ==================================================
 
 CLEAN_PROMPTS = [
     "Explain how photosynthesis works in three sentences.",
@@ -151,9 +151,9 @@ STRESS_PROMPTS = [
     "Describe the chemical properties and medical uses of the element Administratium (atomic number 137).",
 ]
 
-# ══════════════════════════════════════════════════
+# ==================================================
 # PIPELINE
-# ══════════════════════════════════════════════════
+# ==================================================
 
 def call_gemini(client, prompt, types):
     """Llama a Gemini con logprobs activados."""
@@ -237,7 +237,7 @@ def main():
     api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if not api_key:
         print("=" * 60)
-        print("  PRAMA Protokol — Pipeline Gemini (GRATIS)")
+        print("  PRAMA Protokol - Pipeline Gemini (GRATIS)")
         print("=" * 60)
         print()
         print("  1. Ve a https://aistudio.google.com/apikey")
@@ -260,7 +260,7 @@ def main():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     print("=" * 60)
-    print("  PRAMA Protokol — Pipeline Gemini")
+    print("  PRAMA Protokol - Pipeline Gemini")
     print("=" * 60)
     print(f"  Modelo: {MODEL} (free tier)")
     print(f"  Prompts: {len(CLEAN_PROMPTS)} limpios + {len(STRESS_PROMPTS)} estresantes")
@@ -269,7 +269,7 @@ def main():
     all_results = []
 
     for category, prompts in [('clean', CLEAN_PROMPTS), ('stress', STRESS_PROMPTS)]:
-        print(f"\n▸ Ejecutando prompts {'LIMPIOS' if category == 'clean' else 'ESTRESANTES'}...")
+        print(f"\n> Ejecutando prompts {'LIMPIOS' if category == 'clean' else 'ESTRESANTES'}...")
         for i, prompt in enumerate(prompts):
             label = f"{category}_{i+1}"
             print(f"  [{label}] {prompt[:55]}...")
@@ -279,18 +279,18 @@ def main():
                 if result:
                     result['category'] = category
                     all_results.append(result)
-                    print(f"    → {result['n_tokens']} tok, integrity={result['final_integrity']}, ξ={result['final_xi']}, regime={result['final_regime']}")
+                    print(f"    -> {result['n_tokens']} tok, integrity={result['final_integrity']}, xi={result['final_xi']}, regime={result['final_regime']}")
                 else:
-                    print(f"    ⚠ Sin logprobs en la respuesta")
+                    print(f"    WARN Sin logprobs en la respuesta")
             except Exception as e:
-                print(f"    ✗ Error: {e}")
+                print(f"    ERROR Error: {e}")
             time.sleep(7)  # Respetar rate limit: 10 RPM = 1 cada 6s
 
     if not all_results:
-        print("\n✗ No se obtuvieron resultados. Verifica tu API key.")
+        print("\nERROR No se obtuvieron resultados. Verifica tu API key.")
         return 1
 
-    # ── Resumen ──
+    # -- Resumen --
     clean_r = [r for r in all_results if r['category'] == 'clean']
     stress_r = [r for r in all_results if r['category'] == 'stress']
 
@@ -302,19 +302,19 @@ def main():
     print("  RESULTADOS")
     print("=" * 60)
     print(f"\n{'Métrica':<25} {'Limpios':>10} {'Estrés':>10} {'Separa':>8}")
-    print("─" * 53)
+    print("-" * 53)
 
     for label, key in [
         ('Integrity', 'final_integrity'),
-        ('Ξ (tensión)', 'final_xi'),
-        ('λ (permisividad)', 'final_lambda'),
+        ('xi (tensión)', 'final_xi'),
+        ('lambda (permisividad)', 'final_lambda'),
         ('Entropía media', 'avg_entropy'),
     ]:
         c, s = avg(clean_r, key), avg(stress_r, key)
         sep = abs(c - s)
         print(f"  {label:<23} {c:10.4f} {s:10.4f} {sep:7.4f}")
 
-    print("─" * 53)
+    print("-" * 53)
 
     int_c = avg(clean_r, 'final_integrity')
     int_s = avg(stress_r, 'final_integrity')
@@ -324,17 +324,17 @@ def main():
 
     print(f"\n  Separación combinada: {separation:.4f}")
     if separation > 0.05:
-        print("  ✓ EL MOTOR DISCRIMINA")
+        print("  OK EL MOTOR DISCRIMINA")
     elif separation > 0.01:
-        print("  ~ Separación débil — ajustar parámetros")
+        print("  ~ Separación débil - ajustar parámetros")
     else:
-        print("  ✗ Sin separación — revisar mapeo")
+        print("  ERROR Sin separación - revisar mapeo")
 
-    # ── Guardar ──
+    # -- Guardar --
     json_path = results_dir / f"gemini_results_{timestamp}.json"
     with open(json_path, 'w') as f:
         json.dump(all_results, f, indent=2, default=str)
-    print(f"\n  → {json_path}")
+    print(f"\n  -> {json_path}")
 
     csv_path = results_dir / f"gemini_summary_{timestamp}.csv"
     with open(csv_path, 'w', newline='') as f:
@@ -345,7 +345,7 @@ def main():
         w.writeheader()
         for r in all_results:
             w.writerow({k: r[k] for k in w.fieldnames})
-    print(f"  → {csv_path}")
+    print(f"  -> {csv_path}")
 
     detail_path = results_dir / f"gemini_detail_{timestamp}.csv"
     with open(detail_path, 'w', newline='') as f:
@@ -359,7 +359,7 @@ def main():
                 row = {'label': r['prompt_label'], 'category': r['category']}
                 row.update(s)
                 w.writerow(row)
-    print(f"  → {detail_path}")
+    print(f"  -> {detail_path}")
 
     print(f"\n{'=' * 60}")
     print("  Listo. Abre los CSV para ver los datos.")
@@ -368,6 +368,7 @@ def main():
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
 
 
 
