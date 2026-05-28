@@ -1,7 +1,7 @@
 """
 PRAMA Protokol - Pipeline Gemini (GRATIS)
 ==========================================
-Conecta Gemini API free tier (con logprobs) al motor PRAMA.
+Conecta Gemini al motor PRAMA cuando el modelo/ruta expone logprobs.
 
 REQUISITOS:
   pip install google-genai
@@ -28,10 +28,12 @@ from aptadynamik.prama_core import CoreConfig, CoreState
 # CONFIGURACIÓN
 # ==================================================
 
-MODEL = "gemini-2.5-flash"   # Free tier: 10 RPM, 250 RPD
-TOP_LOGPROBS = 5
-WINDOW_SIZE = 8
-MAX_TOKENS = 256
+MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+TOP_LOGPROBS = int(os.getenv("TOP_LOGPROBS", "5"))
+WINDOW_SIZE = int(os.getenv("WINDOW_SIZE", "8"))
+MAX_TOKENS = int(os.getenv("MAX_TOKENS", "256"))
+REQUEST_SLEEP_SECONDS = float(os.getenv("PRAMA_REQUEST_SLEEP_SECONDS", "13"))
+PRAMA_PROMPT_LIMIT = int(os.getenv("PRAMA_PROMPT_LIMIT", "0"))
 
 def make_config():
     cfg = CoreConfig()
@@ -155,6 +157,27 @@ STRESS_PROMPTS = [
 # PIPELINE
 # ==================================================
 
+def explain_gemini_error(exc):
+    msg = str(exc)
+
+    if "Logprobs is not enabled" in msg:
+        return (
+            "El modelo/ruta actual no expone logprobs. "
+            "La API key funciona, pero PRAMA-logprobs necesita otro modelo, Vertex AI "
+            "u otro proveedor con logprobs de salida."
+        )
+
+    if "RESOURCE_EXHAUSTED" in msg or "429" in msg or "quota" in msg.lower():
+        return (
+            "Cuota temporal agotada. Espera y reduce PRAMA_PROMPT_LIMIT "
+            "o aumenta PRAMA_REQUEST_SLEEP_SECONDS."
+        )
+
+    if "API_KEY" in msg or "401" in msg or "403" in msg:
+        return "Problema de autenticacion o permisos de API key."
+
+    return msg
+
 def call_gemini(client, prompt, types):
     """Llama a Gemini con logprobs activados."""
     response = client.models.generate_content(
@@ -248,7 +271,7 @@ def main():
         print('     export GEMINI_API_KEY="tu-key"')
         print('     prama-gemini')
         print()
-        print("  Costo: $0.00")
+        print("  Nota: free tier sujeto a cuotas; logprobs depende del modelo/ruta.")
         print("=" * 60)
         return 0
 
@@ -262,13 +285,17 @@ def main():
     print("=" * 60)
     print("  PRAMA Protokol - Pipeline Gemini")
     print("=" * 60)
-    print(f"  Modelo: {MODEL} (free tier)")
+    print(f"  Modelo: {MODEL}")
     print(f"  Prompts: {len(CLEAN_PROMPTS)} limpios + {len(STRESS_PROMPTS)} estresantes")
     print("=" * 60)
 
     all_results = []
 
-    for category, prompts in [('clean', CLEAN_PROMPTS), ('stress', STRESS_PROMPTS)]:
+    prompt_groups = [('clean', CLEAN_PROMPTS), ('stress', STRESS_PROMPTS)]
+    if PRAMA_PROMPT_LIMIT > 0:
+        prompt_groups = [(category, prompts[:PRAMA_PROMPT_LIMIT]) for category, prompts in prompt_groups]
+
+    for category, prompts in prompt_groups:
         print(f"\n> Ejecutando prompts {'LIMPIOS' if category == 'clean' else 'ESTRESANTES'}...")
         for i, prompt in enumerate(prompts):
             label = f"{category}_{i+1}"
@@ -283,11 +310,15 @@ def main():
                 else:
                     print(f"    WARN Sin logprobs en la respuesta")
             except Exception as e:
-                print(f"    ERROR Error: {e}")
-            time.sleep(7)  # Respetar rate limit: 10 RPM = 1 cada 6s
+                print(f"    ERROR: {explain_gemini_error(e)}")
+            time.sleep(REQUEST_SLEEP_SECONDS)
 
     if not all_results:
-        print("\nERROR No se obtuvieron resultados. Verifica tu API key.")
+        print("\nERROR No se obtuvieron resultados.")
+        print("  Causas probables:")
+        print("  - El modelo/ruta actual no expone logprobs.")
+        print("  - Se agoto la cuota temporal.")
+        print("  - La API key no esta configurada o no tiene permisos.")
         return 1
 
     # -- Resumen --

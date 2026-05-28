@@ -14,12 +14,14 @@ dependencies = []
 [project.optional-dependencies]
 gemini = ["google-genai>=1.0.0"]
 dev = ["pytest>=8.0.0"]
+openai = ["openai"]
 
 [project.scripts]
 prama-verify = "aptadynamik.verification.scenarios:main"
 prama-gemini = "aptadynamik.pipelines.gemini:main"
-
+prama-openai = "aptadynamik.pipelines.openai:main"
 [tool.setuptools.packages.find]
+
 where = ["src"]
 
 [tool.pytest.ini_options]
