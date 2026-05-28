@@ -24,3 +24,7 @@ __pycache__/
 *.key
 credentials.json
 secrets.json
+
+# Generated PRAMA outputs
+results/*
+!results/.gitkeep
