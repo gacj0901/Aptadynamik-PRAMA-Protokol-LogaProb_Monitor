@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aptadynamik-prama"
+version = "0.1.0"
+description = "Structural viability monitoring for LLM generation trajectories."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name = "AptadynamiK" }]
+dependencies = []
+
+[project.optional-dependencies]
+gemini = ["google-genai>=1.0.0"]
+dev = ["pytest>=8.0.0"]
+
+[project.scripts]
+prama-verify = "aptadynamik.verification.scenarios:main"
+prama-gemini = "aptadynamik.pipelines.gemini:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
