@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Monitor</title>
+  <style>
+    :root {
+      --bg: #0c0d0f;
+      --panel: #17191e;
+      --panel-2: #20232a;
+      --border: #30343d;
+      --text: #eef0f4;
+      --muted: #9da3ad;
+      --accent: #df5132;
+      --good: #77d69b;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      --mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 370px;
+      overflow: hidden;
+    }
+
+    main {
+      display: grid;
+      grid-template-rows: 1fr auto;
+      min-width: 0;
+      min-height: 0;
+      border-right: 1px solid var(--border);
+    }
+
+    header {
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--border);
+      background: #121419;
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
+
+    .brand {
+      width: 122px;
+      max-height: 48px;
+      object-fit: contain;
+    }
+
+    .toolmark {
+      width: 138px;
+      height: 86px;
+      object-fit: contain;
+      border-radius: 0;
+      border: 0;
+      background: transparent;
+      padding: 0;
+    }
+
+    h1 { margin: 0; font-size: 18px; letter-spacing: 0; }
+    .sub { color: var(--muted); margin-top: 4px; font: 12px var(--mono); }
+
+    #chat {
+      overflow: auto;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .message {
+      max-width: 860px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      padding: 12px 14px;
+      border-radius: 8px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+    }
+
+    .message.user {
+      align-self: flex-end;
+      border-color: rgba(223, 81, 50, .48);
+      background: rgba(223, 81, 50, .11);
+    }
+
+    .role {
+      display: block;
+      color: var(--muted);
+      font: 12px var(--mono);
+      margin-bottom: 6px;
+    }
+
+    .composer {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 96px;
+      gap: 10px;
+      padding: 14px;
+      border-top: 1px solid var(--border);
+      background: #121419;
+    }
+
+    textarea {
+      min-height: 72px;
+      resize: vertical;
+      color: var(--text);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      font: 14px/1.4 var(--sans);
+    }
+
+    button {
+      border: 1px solid var(--border);
+      color: var(--text);
+      background: var(--panel-2);
+      border-radius: 8px;
+      padding: 10px 12px;
+      cursor: pointer;
+      font-weight: 650;
+    }
+
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+
+    aside {
+      background: var(--panel);
+      display: grid;
+      grid-template-rows: auto auto auto 1fr auto;
+      min-width: 0;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .side-head {
+      display: block;
+      padding: 10px 14px 8px;
+    }
+
+    .side-logo {
+      display: flex;
+      align-items: center;
+      flex-direction: row;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .controls, .metrics, .downloads {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .controls button:nth-child(3) { grid-column: span 2; }
+
+    .metric {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255,255,255,.06);
+      font: 12px var(--mono);
+    }
+
+    .metric span:first-child { color: var(--muted); }
+    .metric span:last-child { color: var(--good); }
+
+    .downloads a {
+      display: block;
+      color: var(--text);
+      text-decoration: none;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 9px 10px;
+      margin-bottom: 8px;
+      background: #121419;
+      font-size: 13px;
+    }
+
+    .downloads {
+      overflow: hidden;
+    }
+
+    .status {
+      padding: 9px 14px;
+      color: var(--muted);
+      font: 12px var(--mono);
+    }
+
+    @media (max-width: 880px) {
+      body { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+      aside { grid-row: 2; height: auto; max-height: 48vh; overflow: hidden; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="sub" id="sessionLine" hidden></div>
+
+    <section id="chat"></section>
+
+    <section class="composer">
+      <textarea id="input" placeholder="Start measurement, then write normally..."></textarea>
+      <button class="primary" id="sendBtn" disabled>Send</button>
+    </section>
+  </main>
+
+  <aside>
+    <header class="side-head">
+      <div class="side-logo">
+        <img class="brand" src="../png AptadynamiK logo l.png" alt="" />
+        <img class="toolmark" src="../logo prama.png" alt="" />
+      </div>
+    </header>
+
+    <section class="controls">
+      <button id="startBtn">Start Measurement</button>
+      <button id="stopBtn" disabled>Stop Measurement</button>
+      <button id="reportBtn" disabled>Generate Results</button>
+    </section>
+
+    <section class="metrics">
+      <div class="metric"><span>Status</span><span id="m_status">idle</span></div>
+      <div class="metric"><span>Turns</span><span id="m_turns">0</span></div>
+      <div class="metric"><span>Tokens</span><span id="m_tokens">0</span></div>
+      <div class="metric"><span>Windows</span><span id="m_windows">0</span></div>
+      <div class="metric"><span>Entropy norm</span><span id="m_entropy">0.000</span></div>
+      <div class="metric"><span>Gap norm</span><span id="m_gap">0.000</span></div>
+      <div class="metric"><span>Rigidity</span><span id="m_rigidity">0.000</span></div>
+      <div class="metric"><span>Uncertainty</span><span id="m_uncertainty">0.000</span></div>
+      <div class="metric"><span>Entropy range</span><span id="m_range">0.000</span></div>
+    </section>
+
+    <section class="downloads">
+      <h1>Downloads</h1>
+      <div class="sub" style="margin-bottom: 12px;">Generate results to enable links</div>
+      <div id="links"></div>
+    </section>
+
+    <div class="status" id="status">Ready</div>
+  </aside>
+
+  <script>
+    const API = 'http://127.0.0.1:8000';
+    let sessionId = null;
+    const $ = id => document.getElementById(id);
+    const chat = $('chat');
+
+    function setStatus(text) { $('status').textContent = text; }
+
+    function addMessage(role, text) {
+      const node = document.createElement('div');
+      node.className = `message ${role}`;
+      node.innerHTML = `<span class="role">${role}</span><span></span>`;
+      node.querySelector('span:last-child').textContent = text;
+      chat.appendChild(node);
+      chat.scrollTop = chat.scrollHeight;
+      return node.querySelector('span:last-child');
+    }
+
+    function fmt(value) { return Number(value || 0).toFixed(3); }
+
+    function updateSummary(summary) {
+      $('sessionLine').textContent = summary.session_id ? `Session ${summary.session_id}` : '';
+      $('m_status').textContent = summary.status || 'idle';
+      $('m_turns').textContent = summary.turn_count || 0;
+      $('m_tokens').textContent = summary.token_count || 0;
+      $('m_windows').textContent = summary.window_count || 0;
+      $('m_entropy').textContent = fmt(summary.avg_entropy_norm);
+      $('m_gap').textContent = fmt(summary.avg_gap_norm);
+      $('m_rigidity').textContent = fmt(summary.avg_rigidity);
+      $('m_uncertainty').textContent = fmt(summary.avg_uncertainty);
+      $('m_range').textContent = fmt(summary.max_entropy_range);
+    }
+
+    async function post(path, body = {}) {
+      const response = await fetch(`${API}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (!response.ok) throw new Error(await response.text());
+      return response;
+    }
+
+    $('startBtn').onclick = async () => {
+      setStatus('Starting session...');
+      const response = await post('/session/start');
+      const summary = await response.json();
+      sessionId = summary.session_id;
+      updateSummary(summary);
+      $('sendBtn').disabled = false;
+      $('stopBtn').disabled = false;
+      $('reportBtn').disabled = false;
+      $('startBtn').disabled = true;
+      setStatus('Measurement active');
+    };
+
+    $('sendBtn').onclick = async () => {
+      const text = $('input').value.trim();
+      if (!text || !sessionId) return;
+      $('input').value = '';
+      addMessage('user', text);
+      const assistantSpan = addMessage('assistant', '');
+      setStatus('Sending...');
+      const response = await post('/chat', { session_id: sessionId, user_message: text });
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const event = JSON.parse(line);
+          if (event.type === 'chunk') assistantSpan.textContent += event.text;
+          if (event.type === 'turn_summary') updateSummary(event.session);
+          chat.scrollTop = chat.scrollHeight;
+        }
+      }
+      setStatus('Turn recorded');
+    };
+
+    $('input').addEventListener('keydown', event => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        if (!$('sendBtn').disabled) $('sendBtn').click();
+      }
+    });
+
+    $('stopBtn').onclick = async () => {
+      if (!sessionId) return;
+      const response = await post('/session/stop', { session_id: sessionId });
+      updateSummary(await response.json());
+      $('sendBtn').disabled = true;
+      $('stopBtn').disabled = true;
+      setStatus('Measurement stopped');
+    };
+
+    $('reportBtn').onclick = async () => {
+      if (!sessionId) return;
+      setStatus('Generating reports...');
+      const response = await post('/session/report', { session_id: sessionId });
+      const payload = await response.json();
+      const labels = {
+        conversation_markdown: 'Conversation Markdown',
+        conversation_json: 'Conversation JSON',
+        prama_report: 'PRAMA Report',
+        detail_csv: 'Detail CSV',
+        summary_csv: 'Summary CSV',
+        raw_json: 'Raw JSON'
+      };
+      $('links').innerHTML = '';
+      Object.entries(payload.files).forEach(([key, file]) => {
+        const a = document.createElement('a');
+        a.href = `${API}${file.download_url}`;
+        a.download = '';
+        a.textContent = labels[key] || key;
+        $('links').appendChild(a);
+      });
+      setStatus('Reports ready');
+    };
+  </script>
+</body>
+</html>
