@@ -114,11 +114,12 @@ PROMPTS = {
 
 def build_families_to_run():
     families = {}
+    prompt_limit = int(os.getenv("PRAMA_PROMPT_LIMIT", str(PRAMA_PROMPT_LIMIT)))
 
     for family_key, family in PROMPTS.items():
         prompts = family["prompts"]
-        if PRAMA_PROMPT_LIMIT > 0:
-            prompts = prompts[:PRAMA_PROMPT_LIMIT]
+        if prompt_limit > 0:
+            prompts = prompts[:prompt_limit]
 
         families[family_key] = {
             **family,
@@ -387,6 +388,120 @@ def run_through_prama(label, prompt, text, signals, cfg):
     }
 
 
+def avg_result(results, family, key):
+    values = [r[key] for r in results.get(family, []) if r.get(key) is not None]
+    return sum(values) / len(values) if values else 0.0
+
+
+def family_metric_table(results):
+    return {
+        family: {
+            "avg_rigidity": avg_result(results, family, "avg_rigidity"),
+            "avg_uncertainty": avg_result(results, family, "avg_uncertainty"),
+            "avg_margin": avg_result(results, family, "avg_margin"),
+            "avg_entropy": avg_result(results, family, "avg_entropy"),
+            "avg_entropy_std": avg_result(results, family, "avg_entropy_std"),
+            "max_entropy_std": avg_result(results, family, "max_entropy_std"),
+            "avg_entropy_range": avg_result(results, family, "avg_entropy_range"),
+            "xi_per_window": avg_result(results, family, "xi_per_window"),
+            "final_integrity": avg_result(results, family, "final_integrity"),
+            "final_lambda": avg_result(results, family, "final_lambda"),
+            "final_xi": avg_result(results, family, "final_xi"),
+            "final_regime": results.get(family, [])[-1].get("final_regime", "") if results.get(family) else "",
+        }
+        for family in PROMPTS
+    }
+
+
+def evaluate_geometry_tests(table):
+    semantic_entropy_std = table["fictional"]["avg_entropy_std"]
+    semantic_entropy_range = table["fictional"]["avg_entropy_range"]
+    structural_entropy_std = (
+        table["contradictory"]["avg_entropy_std"] + table["saturation"]["avg_entropy_std"]
+    ) / 2.0
+    structural_entropy_range = (
+        table["contradictory"]["avg_entropy_range"] + table["saturation"]["avg_entropy_range"]
+    ) / 2.0
+    canonical_rigidity = table["canonical"]["avg_rigidity"]
+
+    return {
+        "G1_entropy_std_saturation_gt_canonical": (
+            table["saturation"]["avg_entropy_std"] > table["canonical"]["avg_entropy_std"]
+        ),
+        "G2_entropy_range_saturation_gt_canonical": (
+            table["saturation"]["avg_entropy_range"] > table["canonical"]["avg_entropy_range"]
+        ),
+        "G3_structural_entropy_std_gt_semantic": structural_entropy_std > semantic_entropy_std,
+        "G4_structural_entropy_range_gt_semantic": structural_entropy_range > semantic_entropy_range,
+        "G5_canonical_rigidity_highest": all(
+            canonical_rigidity > table[family]["avg_rigidity"]
+            for family in ("fictional", "contradictory", "saturation")
+        ),
+    }
+
+
+def evaluate_prama_dynamics_tests(table):
+    xi_canonical = table["canonical"]["xi_per_window"]
+    xi_fictional = table["fictional"]["xi_per_window"]
+    xi_contradictory = table["contradictory"]["xi_per_window"]
+    xi_saturation = table["saturation"]["xi_per_window"]
+
+    return {
+        "D1_xi_contradictory_gt_canonical": xi_contradictory > xi_canonical,
+        "D2_xi_saturation_gt_canonical": xi_saturation > xi_canonical,
+        "D3_xi_structural_gt_semantic": max(xi_contradictory, xi_saturation) > xi_fictional,
+        "D4_lambda_contradictory_lt_fictional": (
+            table["contradictory"]["final_lambda"] < table["fictional"]["final_lambda"]
+        ),
+    }
+
+
+def interpretation_text(geometry_passed, dynamics_passed):
+    if geometry_passed == 5 and dynamics_passed < 4:
+        return "pre-motor logprob geometry discriminates more robustly than PRAMA dynamics for short LLM trajectories."
+    if geometry_passed == 5 and dynamics_passed == 4:
+        return "PRAMA dynamics preserves or amplifies the geometry signal."
+    return "prompt-family definitions require revision."
+
+
+def print_layered_results(table):
+    families = list(PROMPTS.keys())
+    header = f"\n{'Metric':<22}" + "".join(f"  {PROMPTS[f]['label'][:14]:>14}" for f in families)
+
+    print("\n" + "=" * 64)
+    print("  GEOMETRY RESULTS")
+    print("=" * 64)
+    print(header)
+    print("-" * (22 + 16 * len(families)))
+    for label, key in [
+        ("Rigidity", "avg_rigidity"),
+        ("Uncertainty", "avg_uncertainty"),
+        ("Margin", "avg_margin"),
+        ("Entropy raw", "avg_entropy"),
+        ("Entropy std", "avg_entropy_std"),
+        ("Max entropy std", "max_entropy_std"),
+        ("Entropy range", "avg_entropy_range"),
+    ]:
+        values = [f"  {table[f][key]:14.4f}" for f in families]
+        print(f"  {label:<20}{''.join(values)}")
+
+    print("\n" + "=" * 64)
+    print("  PRAMA DYNAMICS RESULTS")
+    print("=" * 64)
+    print(header)
+    print("-" * (22 + 16 * len(families)))
+    for label, key in [
+        ("Xi / window", "xi_per_window"),
+        ("Integrity", "final_integrity"),
+        ("Lambda", "final_lambda"),
+        ("Final xi", "final_xi"),
+    ]:
+        values = [f"  {table[f][key]:14.4f}" for f in families]
+        print(f"  {label:<20}{''.join(values)}")
+    regimes = [f"  {table[family]['final_regime']:>14}" for family in families]
+    print(f"  {'Final regime':<20}{''.join(regimes)}")
+
+
 # ==================================================
 # MAIN
 # ==================================================
@@ -462,95 +577,30 @@ def main():
 
             time.sleep(delay)
 
-    # -- COMPARATIVE TABLE --
+    table = family_metric_table(all_results)
+    print_layered_results(table)
+
+    geometry_tests = evaluate_geometry_tests(table)
+    dynamics_tests = evaluate_prama_dynamics_tests(table)
+    geometry_passed = sum(geometry_tests.values())
+    dynamics_passed = sum(dynamics_tests.values())
+
     print("\n" + "=" * 64)
-    print("  RESULTADOS POR FAMILIA")
+    print("  PRIMARY GEOMETRY TESTS")
     print("=" * 64)
+    for name, passed in geometry_tests.items():
+        print(f"  {name:<48} {'PASS' if passed else 'FAIL'}")
 
-    def avg(lst, key):
-        v = [r[key] for r in lst if r.get(key) is not None]
-        return sum(v) / len(v) if v else 0.0
+    print("\n" + "=" * 64)
+    print("  SECONDARY PRAMA DYNAMICS TESTS")
+    print("=" * 64)
+    for name, passed in dynamics_tests.items():
+        print(f"  {name:<48} {'PASS' if passed else 'FAIL'}")
 
-    families = list(PROMPTS.keys())
-    header = f"\n{'Metric':<22}" + "".join(f"  {PROMPTS[f]['label'][:14]:>14}" for f in families)
-    print(header)
-    print("-" * (22 + 16 * len(families)))
-
-    metrics = [
-        ("Rigidity", "avg_rigidity"),
-        ("Uncertainty", "avg_uncertainty"),
-        ("Margin", "avg_margin"),
-        ("Xi / window", "xi_per_window"),
-        ("Integrity", "final_integrity"),
-        ("Lambda", "final_lambda"),
-        ("Entropy (raw)", "avg_entropy"),
-        ("Entropy std", "avg_entropy_std"),
-        ("Max ent std", "max_entropy_std"),
-        ("Entropy range", "avg_entropy_range"),
-    ]
-
-    for label, key in metrics:
-        vals = [f"  {avg(all_results[f], key):14.4f}" for f in families]
-        print(f"  {label:<20}{''.join(vals)}")
-
-    print("-" * (22 + 16 * len(families)))
-
-    # -- HYPOTHESIS TEST --
-    print("\n> HIPÓTESIS APTADINÁMICA:")
-    print("  estres aptadinamico (contradicción, saturación) debería producir:")
-    print("  - mayor xi/window que canonical y fictional")
-    print("  - menor margin que canonical y fictional")
-    print("  - menor integrity que canonical")
-
-    xi_canon = avg(all_results['canonical'], 'xi_per_window')
-    xi_fict = avg(all_results['fictional'], 'xi_per_window')
-    xi_contr = avg(all_results['contradictory'], 'xi_per_window')
-    xi_satur = avg(all_results['saturation'], 'xi_per_window')
-
-    mar_canon = avg(all_results['canonical'], 'avg_margin')
-    mar_fict = avg(all_results['fictional'], 'avg_margin')
-    mar_contr = avg(all_results['contradictory'], 'avg_margin')
-    mar_satur = avg(all_results['saturation'], 'avg_margin')
-
-    int_canon = avg(all_results['canonical'], 'final_integrity')
-    int_contr = avg(all_results['contradictory'], 'final_integrity')
-    int_satur = avg(all_results['saturation'], 'final_integrity')
-
-    tests = []
-
-    # T1: Contradictory has higher xi/w than canonical
-    t1 = xi_contr > xi_canon
-    tests.append(t1)
-    print(f"\n  T1  xi/w(contradictory) > xi/w(canonical)")
-    print(f"      {xi_contr:.4f} vs {xi_canon:.4f}")
-    print(f"      {'PASS' if t1 else 'FAIL'}")
-
-    # T2: Saturation has higher xi/w than canonical
-    t2 = xi_satur > xi_canon
-    tests.append(t2)
-    print(f"\n  T2  xi/w(saturation) > xi/w(canonical)")
-    print(f"      {xi_satur:.4f} vs {xi_canon:.4f}")
-    print(f"      {'PASS' if t2 else 'FAIL'}")
-
-    # T3: Fictional xi/w is NOT necessarily higher than canonical
-    # (fictional = semantic stress, not aptadynamic stress)
-    t3_aptadynamic = max(xi_contr, xi_satur) > xi_fict
-    tests.append(t3_aptadynamic)
-    print(f"\n  T3  max(xi/w contradict, satur) > xi/w(fictional)")
-    print(f"      {max(xi_contr, xi_satur):.4f} vs {xi_fict:.4f}")
-    print(f"      {'PASS' if t3_aptadynamic else 'FAIL'}: aptadynamic > semantic stress")
-
-    # T4: Margin is lower in contradictory/saturation than canonical
-    t4 = min(mar_contr, mar_satur) < mar_canon
-    tests.append(t4)
-    print(f"\n  T4  margin(contradict/satur) < margin(canonical)")
-    print(f"      {min(mar_contr, mar_satur):.4f} vs {mar_canon:.4f}")
-    print(f"      {'PASS' if t4 else 'FAIL'}")
-
-    passed = sum(tests)
-    print(f"\n{'=' * 64}")
-    print(f"  RESULT: {passed}/4 tests")
-    print(f"{'=' * 64}")
+    print(f"\nGEOMETRY RESULT: {geometry_passed}/5")
+    print(f"PRAMA DYNAMICS RESULT: {dynamics_passed}/4")
+    print("INTERPRETATION:")
+    print(f"  {interpretation_text(geometry_passed, dynamics_passed)}")
 
     # -- SAVE --
     flat_results = []
