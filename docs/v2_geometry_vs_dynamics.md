@@ -1,8 +1,23 @@
 # PRAMA v2: Logprob Geometry vs Dynamics
 
-PRAMA v2 separates three layers that should be read in order.
+PRAMA v2 separates four layers that should be read in order.
 
-## 1. Logprob Geometry Layer
+## 1. Prompt Pressure Layer Ψ
+
+The prompt pressure layer is computed from the input prompt before generation. It estimates the environmental demand imposed on the model independently from the model's answer.
+
+The current extractor reports:
+
+- `psi`: total prompt pressure.
+- `load_saturation`: density of simultaneous constraints.
+- `load_contradiction`: incompatible demand load.
+- `contra_weight`: weight used for contradiction load.
+
+In this architecture, Ψ comes from the prompt and Φ comes from the output logprob geometry. Δ should therefore be interpreted as a decoupling between environmental pressure and generative support: the distance between what the prompt demands and what the generation trajectory can sustain.
+
+The current integration is observational. It records Ψ alongside geometry and PRAMA dynamics, but it does not yet recalibrate or modify the PRAMA core coupling.
+
+## 2. Logprob Geometry Layer
 
 The logprob geometry layer is computed before the PRAMA core runs. It describes direct properties of the model's local token distribution:
 
@@ -15,7 +30,7 @@ The logprob geometry layer is computed before the PRAMA core runs. It describes 
 
 These metrics are primary for short LLM trajectories because they are direct measurements of the generation distribution. They do not depend on downstream dynamical integration.
 
-## 2. PRAMA Dynamics Layer
+## 3. PRAMA Dynamics Layer
 
 The PRAMA dynamics layer receives geometry-derived window inputs and evolves the PRAMA state. It reports:
 
@@ -27,11 +42,11 @@ The PRAMA dynamics layer receives geometry-derived window inputs and evolves the
 
 For short LLM trajectories, `xi_per_window` is a secondary metric. It can preserve or amplify a geometry signal, but it should not be treated as the primary discriminator when only a few windows are available.
 
-## 3. Verification Layer
+## 4. Verification Layer
 
 The verification layer tests whether prompt families separate in the expected way.
 
-Primary geometry tests compare entropy variation, entropy range, and canonical rigidity across families. Secondary PRAMA dynamics tests compare whether the PRAMA state follows the geometry signal through `xi_per_window` and `lambda`.
+Prompt pressure tests verify that the input manipulation separates low-pressure families from contradictory and saturated prompts. Logprob geometry tests compare entropy variation, entropy range, and canonical rigidity across families. Secondary PRAMA dynamics tests compare whether the PRAMA state follows the geometry signal through `xi_per_window` and `lambda`.
 
 ## Semantic Stress vs Structural Stress
 

@@ -8,6 +8,9 @@ FILES = sorted(glob.glob("results/v2_summary_*.csv"))
 FAMILIES = ["canonical", "fictional", "contradictory", "saturation"]
 
 METRICS = [
+    "psi",
+    "load_saturation",
+    "load_contradiction",
     "avg_rigidity",
     "avg_uncertainty",
     "avg_margin",
@@ -18,6 +21,14 @@ METRICS = [
     "avg_entropy_std",
     "max_entropy_std",
     "avg_entropy_range",
+]
+
+PRESSURE_TEST_ORDER = [
+    "P1_psi_contradictory_gt_low",
+    "P2_psi_saturation_gt_low",
+    "P3_fictional_pressure_low",
+    "P4_saturation_load_gt_contradictory",
+    "P5_contradiction_load_gt_canonical",
 ]
 
 GEOMETRY_TEST_ORDER = [
@@ -79,6 +90,25 @@ def has_post_patch_entropy_metrics(summary):
     return any(summary[family][metric] != 0.0 for family in FAMILIES for metric in metrics)
 
 
+def has_prompt_pressure_metrics(summary):
+    return any(summary[family]["psi"] != 0.0 for family in FAMILIES)
+
+
+def pressure_tests(summary):
+    low_pressure = max(summary["canonical"]["psi"], summary["fictional"]["psi"])
+    return {
+        "P1_psi_contradictory_gt_low": summary["contradictory"]["psi"] > low_pressure,
+        "P2_psi_saturation_gt_low": summary["saturation"]["psi"] > low_pressure,
+        "P3_fictional_pressure_low": summary["fictional"]["psi"] <= summary["canonical"]["psi"] + 1.0,
+        "P4_saturation_load_gt_contradictory": (
+            summary["saturation"]["load_saturation"] > summary["contradictory"]["load_saturation"]
+        ),
+        "P5_contradiction_load_gt_canonical": (
+            summary["contradictory"]["load_contradiction"] > summary["canonical"]["load_contradiction"]
+        ),
+    }
+
+
 def geometry_tests(summary):
     semantic_entropy_std = summary["fictional"]["avg_entropy_std"]
     semantic_entropy_range = summary["fictional"]["avg_entropy_range"]
@@ -125,6 +155,9 @@ def dynamics_tests(summary):
 def print_summary_table(summary):
     print(
         f"{'family':<16}"
+        f"{'psi':>8}"
+        f"{'sat':>8}"
+        f"{'con':>8}"
         f"{'rigid':>10}"
         f"{'uncert':>10}"
         f"{'margin':>10}"
@@ -139,6 +172,9 @@ def print_summary_table(summary):
         s = summary[family]
         print(
             f"{family:<16}"
+            f"{s['psi']:>8.2f}"
+            f"{s['load_saturation']:>8.2f}"
+            f"{s['load_contradiction']:>8.2f}"
             f"{s['avg_rigidity']:>10.4f}"
             f"{s['avg_uncertainty']:>10.4f}"
             f"{s['avg_margin']:>10.4f}"
@@ -160,10 +196,10 @@ def main():
 
     for path in FILES:
         summary = load_file(path)
-        if not has_post_patch_entropy_metrics(summary):
+        if not has_post_patch_entropy_metrics(summary) or not has_prompt_pressure_metrics(summary):
             skipped.append(path)
             continue
-        runs.append((path, summary, geometry_tests(summary), dynamics_tests(summary)))
+        runs.append((path, summary, pressure_tests(summary), geometry_tests(summary), dynamics_tests(summary)))
 
     print("=" * 96)
     print("PRAMA v2 replication analysis")
@@ -177,7 +213,8 @@ def main():
         print("No post-patch v2 summaries available for aggregate analysis.")
         return 0
 
-    for path, summary, g_tests, d_tests in runs:
+    for path, summary, p_tests, g_tests, d_tests in runs:
+        p_passed = sum(p_tests.values())
         g_passed = sum(g_tests.values())
         d_passed = sum(d_tests.values())
 
@@ -185,7 +222,11 @@ def main():
         print("-" * 96)
         print_summary_table(summary)
 
-        print("\n  PRIMARY GEOMETRY TESTS")
+        print("\n  PROMPT PRESSURE TESTS")
+        for name in PRESSURE_TEST_ORDER:
+            print(f"  {name:<50} {'PASS' if p_tests[name] else 'FAIL'}")
+
+        print("\n  LOGPROB GEOMETRY TESTS")
         for name in GEOMETRY_TEST_ORDER:
             print(f"  {name:<50} {'PASS' if g_tests[name] else 'FAIL'}")
 
@@ -193,19 +234,24 @@ def main():
         for name in DYNAMICS_TEST_ORDER:
             print(f"  {name:<50} {'PASS' if d_tests[name] else 'FAIL'}")
 
-        print(f"\n  GEOMETRY RESULT: {g_passed}/5")
+        print(f"\n  PROMPT PRESSURE RESULT: {p_passed}/5")
+        print(f"  GEOMETRY RESULT: {g_passed}/5")
         print(f"  PRAMA DYNAMICS RESULT: {d_passed}/4")
         print()
 
     agg = {family: {metric: [] for metric in METRICS} for family in FAMILIES}
+    pressure_counts = defaultdict(int)
     geometry_counts = defaultdict(int)
     dynamics_counts = defaultdict(int)
 
-    for _, summary, g_tests, d_tests in runs:
+    for _, summary, p_tests, g_tests, d_tests in runs:
         for family in FAMILIES:
             for metric in METRICS:
                 agg[family][metric].append(summary[family][metric])
 
+        for name, passed in p_tests.items():
+            if passed:
+                pressure_counts[name] += 1
         for name, passed in g_tests.items():
             if passed:
                 geometry_counts[name] += 1
@@ -224,7 +270,14 @@ def main():
 
     print()
     print("=" * 96)
-    print("Geometry test stability")
+    print("Prompt pressure test stability")
+    print("=" * 96)
+    for name in PRESSURE_TEST_ORDER:
+        print(f"{name:<50} {pressure_counts[name]}/{len(runs)} runs")
+
+    print()
+    print("=" * 96)
+    print("Logprob geometry test stability")
     print("=" * 96)
     for name in GEOMETRY_TEST_ORDER:
         print(f"{name:<50} {geometry_counts[name]}/{len(runs)} runs")

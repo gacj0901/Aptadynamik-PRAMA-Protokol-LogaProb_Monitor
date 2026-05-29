@@ -32,6 +32,7 @@ from pathlib import Path
 from datetime import datetime
 
 from aptadynamik.prama_core import CoreConfig, CoreState
+from aptadynamik.psi_extract import extract_psi
 
 # ==================================================
 # CONFIG
@@ -328,6 +329,7 @@ def run_through_prama(label, prompt, text, signals, cfg):
     if not signals:
         return None
 
+    psi_result = extract_psi(prompt, scale=None)
     windows = window_aggregate(signals)
     if not windows:
         return None
@@ -370,6 +372,11 @@ def run_through_prama(label, prompt, text, signals, cfg):
         'n_tokens': len(signals),
         'n_windows': n_w,
         'steps': steps,
+        # Prompt pressure layer
+        'psi': psi_result.psi,
+        'load_saturation': psi_result.load_saturation,
+        'load_contradiction': psi_result.load_contradiction,
+        'contra_weight': psi_result.contra_weight,
         # Final state
         'final_integrity': steps[-1]['integrity'],
         'final_xi': steps[-1]['xi'],
@@ -397,6 +404,10 @@ def family_metric_table(results):
     return {
         family: {
             "avg_rigidity": avg_result(results, family, "avg_rigidity"),
+            "psi": avg_result(results, family, "psi"),
+            "load_saturation": avg_result(results, family, "load_saturation"),
+            "load_contradiction": avg_result(results, family, "load_contradiction"),
+            "contra_weight": avg_result(results, family, "contra_weight"),
             "avg_uncertainty": avg_result(results, family, "avg_uncertainty"),
             "avg_margin": avg_result(results, family, "avg_margin"),
             "avg_entropy": avg_result(results, family, "avg_entropy"),
@@ -410,6 +421,21 @@ def family_metric_table(results):
             "final_regime": results.get(family, [])[-1].get("final_regime", "") if results.get(family) else "",
         }
         for family in PROMPTS
+    }
+
+
+def evaluate_prompt_pressure_tests(table):
+    low_pressure = max(table["canonical"]["psi"], table["fictional"]["psi"])
+    return {
+        "P1_psi_contradictory_gt_low": table["contradictory"]["psi"] > low_pressure,
+        "P2_psi_saturation_gt_low": table["saturation"]["psi"] > low_pressure,
+        "P3_fictional_pressure_low": table["fictional"]["psi"] <= table["canonical"]["psi"] + 1.0,
+        "P4_saturation_load_gt_contradictory": (
+            table["saturation"]["load_saturation"] > table["contradictory"]["load_saturation"]
+        ),
+        "P5_contradiction_load_gt_canonical": (
+            table["contradictory"]["load_contradiction"] > table["canonical"]["load_contradiction"]
+        ),
     }
 
 
@@ -456,12 +482,15 @@ def evaluate_prama_dynamics_tests(table):
     }
 
 
-def interpretation_text(geometry_passed, dynamics_passed):
-    if geometry_passed == 5 and dynamics_passed < 4:
-        return "pre-motor logprob geometry discriminates more robustly than PRAMA dynamics for short LLM trajectories."
-    if geometry_passed == 5 and dynamics_passed == 4:
-        return "PRAMA dynamics preserves or amplifies the geometry signal."
-    return "prompt-family definitions require revision."
+def interpretation_text(pressure_passed, geometry_passed, dynamics_passed):
+    messages = []
+    if pressure_passed < 5:
+        return ["prompt manipulation or Ψ extractor requires revision."]
+    if geometry_passed == 5:
+        messages.append("input pressure and output geometry are aligned.")
+    if dynamics_passed < 4:
+        messages.append("PRAMA dynamics requires calibrated coupling between independent Ψ and Φ channels.")
+    return messages or ["prompt-family definitions require revision."]
 
 
 def print_layered_results(table):
@@ -469,7 +498,20 @@ def print_layered_results(table):
     header = f"\n{'Metric':<22}" + "".join(f"  {PROMPTS[f]['label'][:14]:>14}" for f in families)
 
     print("\n" + "=" * 64)
-    print("  GEOMETRY RESULTS")
+    print("  PROMPT PRESSURE RESULTS")
+    print("=" * 64)
+    print(header)
+    print("-" * (22 + 16 * len(families)))
+    for label, key in [
+        ("Psi", "psi"),
+        ("Load saturation", "load_saturation"),
+        ("Load contradiction", "load_contradiction"),
+    ]:
+        values = [f"  {table[f][key]:14.4f}" for f in families]
+        print(f"  {label:<20}{''.join(values)}")
+
+    print("\n" + "=" * 64)
+    print("  LOGPROB GEOMETRY RESULTS")
     print("=" * 64)
     print(header)
     print("-" * (22 + 16 * len(families)))
@@ -563,6 +605,7 @@ def main():
                     result['family'] = family_key
                     all_results[family_key].append(result)
                     print(f"    {result['n_tokens']} tok | "
+                          f"psi={result['psi']:.1f} "
                           f"rig={result['avg_rigidity']:.3f} "
                           f"unc={result['avg_uncertainty']:.3f} "
                           f"mar={result['avg_margin']:.3f} "
@@ -580,13 +623,21 @@ def main():
     table = family_metric_table(all_results)
     print_layered_results(table)
 
+    pressure_tests = evaluate_prompt_pressure_tests(table)
     geometry_tests = evaluate_geometry_tests(table)
     dynamics_tests = evaluate_prama_dynamics_tests(table)
+    pressure_passed = sum(pressure_tests.values())
     geometry_passed = sum(geometry_tests.values())
     dynamics_passed = sum(dynamics_tests.values())
 
     print("\n" + "=" * 64)
-    print("  PRIMARY GEOMETRY TESTS")
+    print("  PROMPT PRESSURE TESTS")
+    print("=" * 64)
+    for name, passed in pressure_tests.items():
+        print(f"  {name:<48} {'PASS' if passed else 'FAIL'}")
+
+    print("\n" + "=" * 64)
+    print("  LOGPROB GEOMETRY TESTS")
     print("=" * 64)
     for name, passed in geometry_tests.items():
         print(f"  {name:<48} {'PASS' if passed else 'FAIL'}")
@@ -597,10 +648,12 @@ def main():
     for name, passed in dynamics_tests.items():
         print(f"  {name:<48} {'PASS' if passed else 'FAIL'}")
 
-    print(f"\nGEOMETRY RESULT: {geometry_passed}/5")
+    print(f"\nPROMPT PRESSURE RESULT: {pressure_passed}/5")
+    print(f"GEOMETRY RESULT: {geometry_passed}/5")
     print(f"PRAMA DYNAMICS RESULT: {dynamics_passed}/4")
     print("INTERPRETATION:")
-    print(f"  {interpretation_text(geometry_passed, dynamics_passed)}")
+    for message in interpretation_text(pressure_passed, geometry_passed, dynamics_passed):
+        print(f"  {message}")
 
     # -- SAVE --
     flat_results = []
@@ -614,7 +667,9 @@ def main():
 
     csv_path = results_dir / f"v2_summary_{ts}.csv"
     with open(csv_path, 'w', newline='') as f:
-        fields = ['label', 'family', 'n_tokens', 'avg_rigidity', 'avg_uncertainty',
+        fields = ['label', 'family', 'n_tokens',
+                  'psi', 'load_saturation', 'load_contradiction', 'contra_weight',
+                  'avg_rigidity', 'avg_uncertainty',
                   'avg_margin', 'xi_per_window', 'final_integrity', 'final_lambda',
                   'final_xi', 'final_regime', 'avg_entropy',
                   'avg_entropy_std', 'max_entropy_std', 'avg_entropy_range']
