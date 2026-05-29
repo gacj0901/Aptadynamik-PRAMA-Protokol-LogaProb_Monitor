@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import csv
 import json
+import re
+from datetime import datetime
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 
 from aptadynamik.observer.session_recorder import SessionRecorder
 
@@ -26,6 +28,9 @@ SUMMARY_FIELDS = [
     "session_id",
     "model",
     "status",
+    "output_folder_name",
+    "output_dir",
+    "generated_at",
     "created_at",
     "closed_at",
     "duration_seconds",
@@ -41,38 +46,103 @@ SUMMARY_FIELDS = [
     "max_entropy_range",
 ]
 
+FILE_NAMES = {
+    "raw": "raw.json",
+    "detail": "detail.csv",
+    "summary": "summary.csv",
+    "report": "report.md",
+    "conversation_json": "conversation.json",
+    "conversation_md": "conversation.md",
+    "metadata": "metadata.json",
+}
+
+
+def sanitize_model_id(model: str) -> str:
+    value = model.replace("/", "-").replace(":", "-").replace(" ", "-")
+    value = re.sub(r"[^A-Za-z0-9_.-]", "", value)
+    return value or "unknown-model"
+
+
+def local_timestamp_for_folder(now: Optional[datetime] = None) -> str:
+    current = now or datetime.now().astimezone()
+    return current.strftime("%Y%m%d-%H%Mh")
+
 
 class ReportWriter:
-    def __init__(self, results_dir: str | Path = "results"):
+    def __init__(
+        self,
+        results_dir: str | Path = "results",
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        top_logprobs: Optional[int] = None,
+        window_size: Optional[int] = None,
+    ):
         self.results_dir = Path(results_dir)
         self.results_dir.mkdir(exist_ok=True)
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.top_logprobs = top_logprobs
+        self.window_size = window_size
 
-    def write(self, recorder: SessionRecorder) -> Dict[str, str]:
+    def write(self, recorder: SessionRecorder) -> Dict[str, object]:
         if recorder.status == "active":
             recorder.stop()
 
-        session_id = recorder.session_id
-        raw_path = self.results_dir / f"session_{session_id}_raw.json"
-        detail_path = self.results_dir / f"session_{session_id}_detail.csv"
-        summary_path = self.results_dir / f"session_{session_id}_summary.csv"
-        report_path = self.results_dir / f"session_{session_id}_report.md"
-        conversation_md_path = self.results_dir / f"session_{session_id}_conversation.md"
-        conversation_json_path = self.results_dir / f"session_{session_id}_conversation.json"
+        generated_at = datetime.now().astimezone().isoformat()
+        folder_name = f"session_{local_timestamp_for_folder()}_{sanitize_model_id(recorder.model)}"
+        output_dir = self._unique_output_dir(folder_name)
+        output_dir.mkdir(parents=True, exist_ok=False)
 
-        raw_path.write_text(json.dumps(recorder.to_dict(), indent=2), encoding="utf-8")
-        self._write_detail(recorder, detail_path)
-        self._write_summary(recorder, summary_path)
-        self._write_markdown(recorder, report_path)
-        self._write_conversation_markdown(recorder, conversation_md_path)
-        self._write_conversation_json(recorder, conversation_json_path)
+        recorder.generated_at = generated_at
+        recorder.output_folder_name = output_dir.name
+        recorder.output_dir = str(output_dir)
+
+        paths = {key: output_dir / filename for key, filename in FILE_NAMES.items()}
+
+        paths["raw"].write_text(json.dumps(recorder.to_dict(), indent=2), encoding="utf-8")
+        self._write_detail(recorder, paths["detail"])
+        self._write_summary(recorder, paths["summary"])
+        self._write_markdown(recorder, paths["report"])
+        self._write_conversation_json(recorder, paths["conversation_json"])
+        self._write_conversation_markdown(recorder, paths["conversation_md"])
+        paths["metadata"].write_text(json.dumps(self._metadata(recorder), indent=2), encoding="utf-8")
 
         return {
-            "conversation_markdown": str(conversation_md_path),
-            "conversation_json": str(conversation_json_path),
-            "prama_report": str(report_path),
-            "detail_csv": str(detail_path),
-            "summary_csv": str(summary_path),
-            "raw_json": str(raw_path),
+            "session_id": recorder.session_id,
+            "output_folder": output_dir.name,
+            "output_dir": str(output_dir),
+            "files": {key: str(path) for key, path in paths.items()},
+        }
+
+    def _unique_output_dir(self, folder_name: str) -> Path:
+        candidate = self.results_dir / folder_name
+        if not candidate.exists():
+            return candidate
+        index = 2
+        while True:
+            indexed = self.results_dir / f"{folder_name}_{index}"
+            if not indexed.exists():
+                return indexed
+            index += 1
+
+    def _metadata(self, recorder: SessionRecorder) -> Dict[str, object]:
+        summary = recorder.live_summary()
+        return {
+            "session_id": recorder.session_id,
+            "output_folder_name": recorder.output_folder_name,
+            "output_dir": recorder.output_dir,
+            "model": recorder.model,
+            "generated_at": recorder.generated_at,
+            "started_at": recorder.created_at,
+            "stopped_at": recorder.closed_at,
+            "duration_seconds": summary["duration_seconds"],
+            "total_turns": summary["turn_count"],
+            "total_tokens": summary["total_tokens"],
+            "total_windows": summary["total_windows"],
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            "top_logprobs": self.top_logprobs,
+            "window_size": self.window_size,
         }
 
     def _write_detail(self, recorder: SessionRecorder, path: Path) -> None:
@@ -99,12 +169,13 @@ class ReportWriter:
     def _write_markdown(self, recorder: SessionRecorder, path: Path) -> None:
         summary = recorder.live_summary()
         files = {
-            "conversation.md": f"session_{recorder.session_id}_conversation.md",
-            "conversation.json": f"session_{recorder.session_id}_conversation.json",
-            "raw.json": f"session_{recorder.session_id}_raw.json",
-            "detail.csv": f"session_{recorder.session_id}_detail.csv",
-            "summary.csv": f"session_{recorder.session_id}_summary.csv",
-            "report.md": f"session_{recorder.session_id}_report.md",
+            "raw.json": "raw.json",
+            "detail.csv": "detail.csv",
+            "summary.csv": "summary.csv",
+            "report.md": "report.md",
+            "conversation.json": "conversation.json",
+            "conversation.md": "conversation.md",
+            "metadata.json": "metadata.json",
         }
         lines = [
             "# PRAMA Monitor Session Report",
@@ -112,7 +183,9 @@ class ReportWriter:
             "## Session Metadata",
             "",
             f"- Session ID: `{recorder.session_id}`",
+            f"- Output folder: `{recorder.output_folder_name}`",
             f"- Model: `{recorder.model}`",
+            f"- Generated at: `{recorder.generated_at}`",
             f"- Status: `{recorder.status}`",
             f"- Started: `{recorder.created_at}`",
             f"- Stopped: `{recorder.closed_at or ''}`",

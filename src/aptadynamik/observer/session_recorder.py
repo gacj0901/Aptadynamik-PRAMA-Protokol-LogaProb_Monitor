@@ -22,6 +22,10 @@ class SessionRecorder:
     model: str
     created_at: str = field(default_factory=utc_now)
     closed_at: Optional[str] = None
+    generated_at: Optional[str] = None
+    output_prefix: Optional[str] = None
+    output_dir: Optional[str] = None
+    output_folder_name: Optional[str] = None
     turns: List[Dict[str, Any]] = field(default_factory=list)
     status: str = "active"
 
@@ -96,6 +100,9 @@ class SessionRecorder:
             "status": self.status,
             "created_at": self.created_at,
             "closed_at": self.closed_at,
+            "generated_at": self.generated_at,
+            "output_dir": self.output_dir,
+            "output_folder_name": self.output_folder_name,
             "started_at": self.created_at,
             "stopped_at": self.closed_at,
             "duration_seconds": self.duration_seconds(),
@@ -113,6 +120,9 @@ class SessionRecorder:
             "model": self.model,
             "created_at": self.created_at,
             "closed_at": self.closed_at,
+            "generated_at": self.generated_at,
+            "output_dir": self.output_dir,
+            "output_folder_name": self.output_folder_name,
             "started_at": self.created_at,
             "stopped_at": self.closed_at,
             "status": self.status,

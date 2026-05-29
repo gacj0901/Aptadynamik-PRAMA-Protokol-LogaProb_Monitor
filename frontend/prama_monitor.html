@@ -353,22 +353,24 @@
       const response = await post('/session/report', { session_id: sessionId });
       const payload = await response.json();
       const labels = {
-        conversation_markdown: 'Conversation Markdown',
+        conversation_md: 'Conversation Markdown',
         conversation_json: 'Conversation JSON',
-        prama_report: 'PRAMA Report',
-        detail_csv: 'Detail CSV',
-        summary_csv: 'Summary CSV',
-        raw_json: 'Raw JSON'
+        report: 'PRAMA Report',
+        detail: 'Detail CSV',
+        summary: 'Summary CSV',
+        raw: 'Raw JSON',
+        metadata: 'Metadata JSON'
       };
       $('links').innerHTML = '';
-      Object.entries(payload.files).forEach(([key, file]) => {
+      Object.entries(payload.files).forEach(([key, path]) => {
         const a = document.createElement('a');
-        a.href = `${API}${file.download_url}`;
+        const filename = path.split(/[\\/]/).pop();
+        a.href = `${API}/download?path=${encodeURIComponent(path)}`;
         a.download = '';
-        a.textContent = labels[key] || key;
+        a.textContent = `${labels[key] || key} (${filename})`;
         $('links').appendChild(a);
       });
-      setStatus('Reports ready');
+      setStatus(`Reports ready: ${payload.output_folder}`);
     };
   </script>
 </body>

@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
@@ -201,15 +201,14 @@ def stop_session(request: SessionRequest):
 @app.post("/session/report")
 def session_report(request: SessionRequest):
     recorder = resolve_session(request.session_id)
-    paths = ReportWriter(RESULTS_DIR).write(recorder)
-    files = {
-        key: {
-            "path": value,
-            "download_url": f"/download/{Path(value).name}",
-        }
-        for key, value in paths.items()
-    }
-    return {"session_id": request.session_id, "files": files}
+    result = ReportWriter(
+        RESULTS_DIR,
+        temperature=0.7,
+        max_tokens=MAX_TOKENS,
+        top_logprobs=TOP_LOGPROBS,
+        window_size=WINDOW_SIZE,
+    ).write(recorder)
+    return result
 
 
 @app.get("/session/{session_id}/summary")
@@ -217,9 +216,18 @@ def session_summary(session_id: str):
     return resolve_session(session_id).live_summary()
 
 
-@app.get("/download/{filename}")
-def download(filename: str):
-    path = RESULTS_DIR / Path(filename).name
-    if not path.exists() or not path.is_file():
+@app.get("/download")
+def download(path: str = Query(...)):
+    requested = Path(path)
+    if requested.is_absolute():
+        candidate = requested.resolve()
+    else:
+        candidate = (Path.cwd() / requested).resolve()
+    results_root = (Path.cwd() / RESULTS_DIR).resolve()
+    try:
+        candidate.relative_to(results_root)
+    except ValueError:
         raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(path)
+    if not candidate.exists() or not candidate.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(candidate)

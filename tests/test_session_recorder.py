@@ -1,8 +1,9 @@
 import json
+import re
 import time
 from pathlib import Path
 
-from aptadynamik.observer.report_writer import ReportWriter
+from aptadynamik.observer.report_writer import ReportWriter, sanitize_model_id
 from aptadynamik.observer.session_recorder import SessionRecorder
 
 
@@ -20,6 +21,13 @@ def sample_windows():
             "n_tokens_in_window": 2,
         }
     ]
+
+
+def recorder_with_turn(model="test/model:fixture v1"):
+    recorder = SessionRecorder.create(model=model, session_id="test-session-abc123")
+    tokens = [{"token": "hello", "top_logprobs": [-0.1, -0.5]}]
+    recorder.append_turn("Hi", "Hello there", tokens, sample_windows())
+    return recorder
 
 
 def test_session_recorder_stores_turn_and_live_summary():
@@ -41,47 +49,97 @@ def test_session_recorder_stores_turn_and_live_summary():
     assert summary["avg_rigidity"] == 0.45
 
 
-def test_report_writer_creates_reports_and_transcripts():
-    recorder = SessionRecorder.create(model="test-model-fixture", session_id="test-session-abc123")
-    tokens = [{"token": "hello", "top_logprobs": [-0.1, -0.5]}]
-    recorder.append_turn("Hi", "Hello there", tokens, sample_windows())
+def test_sanitize_model_id_replaces_invalid_filename_characters():
+    assert sanitize_model_id("openai/gpt:4o mini!") == "openai-gpt-4o-mini"
+    assert sanitize_model_id("gpt_4o-mini.2026") == "gpt_4o-mini.2026"
 
-    output_dir = Path("results") / "test-session-recorder"
-    files = ReportWriter(output_dir).write(recorder)
 
-    assert set(files) == {
-        "conversation_markdown",
-        "conversation_json",
-        "prama_report",
-        "detail_csv",
-        "summary_csv",
-        "raw_json",
+def test_report_writer_creates_dedicated_output_folder_and_files(tmp_path):
+    recorder = recorder_with_turn()
+    result = ReportWriter(tmp_path, max_tokens=512, top_logprobs=5, window_size=16).write(recorder)
+
+    output_dir = Path(result["output_dir"])
+    output_folder = result["output_folder"]
+    files = result["files"]
+
+    assert output_dir.parent == tmp_path
+    assert output_dir.name == output_folder
+    assert re.match(r"session_\d{8}-\d{4}h_test-model-fixture-v1(?:_\d+)?$", output_folder)
+    assert all(Path(path).parent == output_dir for path in files.values())
+    assert not any(path.is_file() for path in tmp_path.iterdir())
+
+    expected_files = {
+        "raw": "raw.json",
+        "detail": "detail.csv",
+        "summary": "summary.csv",
+        "report": "report.md",
+        "conversation_json": "conversation.json",
+        "conversation_md": "conversation.md",
+        "metadata": "metadata.json",
     }
-    for path in files.values():
-        assert Path(path).exists()
+    assert set(files) == set(expected_files)
+    for key, filename in expected_files.items():
+        assert Path(files[key]).name == filename
+        assert Path(files[key]).exists()
 
-    conversation_md = output_dir.joinpath("session_test-session-abc123_conversation.md").read_text(encoding="utf-8")
+
+def test_metadata_and_raw_store_output_folder_metadata(tmp_path):
+    recorder = recorder_with_turn(model="gpt-4o-mini")
+    result = ReportWriter(tmp_path, temperature=0.7, max_tokens=321, top_logprobs=7, window_size=12).write(recorder)
+    output_dir = Path(result["output_dir"])
+
+    metadata = json.loads(output_dir.joinpath("metadata.json").read_text(encoding="utf-8"))
+    raw = json.loads(output_dir.joinpath("raw.json").read_text(encoding="utf-8"))
+
+    assert metadata["session_id"] == "test-session-abc123"
+    assert metadata["output_folder_name"] == output_dir.name
+    assert metadata["output_dir"] == str(output_dir)
+    assert metadata["model"] == "gpt-4o-mini"
+    assert metadata["generated_at"]
+    assert metadata["max_tokens"] == 321
+    assert metadata["top_logprobs"] == 7
+    assert metadata["window_size"] == 12
+    assert raw["output_folder_name"] == output_dir.name
+    assert raw["output_dir"] == str(output_dir)
+    assert raw["generated_at"] == metadata["generated_at"]
+
+
+def test_report_and_conversation_files_use_simple_names(tmp_path):
+    recorder = recorder_with_turn(model="test-model-fixture")
+    result = ReportWriter(tmp_path).write(recorder)
+    output_dir = Path(result["output_dir"])
+
+    conversation_md = output_dir.joinpath("conversation.md").read_text(encoding="utf-8")
     assert "Hi" in conversation_md
     assert "Hello there" in conversation_md
     assert "top_logprobs" not in conversation_md
 
-    conversation_json = json.loads(
-        output_dir.joinpath("session_test-session-abc123_conversation.json").read_text(encoding="utf-8")
-    )
+    conversation_json = json.loads(output_dir.joinpath("conversation.json").read_text(encoding="utf-8"))
     assert conversation_json["session_id"] == "test-session-abc123"
     assert conversation_json["turns"][0]["metrics_summary"]["token_count"] == 1
     assert "tokens" not in conversation_json["turns"][0]
 
-    report = output_dir.joinpath("session_test-session-abc123_report.md").read_text(encoding="utf-8")
+    report = output_dir.joinpath("report.md").read_text(encoding="utf-8")
     assert "## Session Metadata" in report
-    assert "## Aggregate Geometry" in report
-    assert "## Conversation Summary" in report
-    assert "## Generated Files" in report
-    assert "Duration seconds" in report
+    assert "Output folder" in report
+    assert "Generated at" in report
+    assert "metadata.json" in report
     assert "This report currently measures logprob-derived output geometry" in report
 
-    raw = json.loads(output_dir.joinpath("session_test-session-abc123_raw.json").read_text(encoding="utf-8"))
-    assert raw["turns"][0]["tokens"][0]["top_logprobs"] == [-0.1, -0.5]
+
+def test_report_writer_returns_frontend_compatible_file_map(tmp_path):
+    result = ReportWriter(tmp_path).write(recorder_with_turn())
+
+    assert set(result) == {"session_id", "output_folder", "output_dir", "files"}
+    assert set(result["files"]) == {
+        "raw",
+        "detail",
+        "summary",
+        "report",
+        "conversation_json",
+        "conversation_md",
+        "metadata",
+    }
 
 
 def test_closed_at_is_set_after_event_and_differs_from_created_at():
