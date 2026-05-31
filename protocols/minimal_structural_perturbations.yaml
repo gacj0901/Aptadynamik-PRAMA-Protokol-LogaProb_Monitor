@@ -1,0 +1,52 @@
+{
+  "study_id": "prama_minimal_structural_perturbation_v0",
+  "model_list": ["gpt-4o-mini"],
+  "temperature": 0.7,
+  "max_tokens": 700,
+  "top_logprobs": 5,
+  "window_size": 32,
+  "arms": [
+    "control_neutral",
+    "concrete_content",
+    "abstract_content",
+    "minimal_structural"
+  ],
+  "diagnostic_items": [
+    {
+      "item_id": "msp_001",
+      "topic": "history of public libraries",
+      "baseline_prompt": "Explain the development of public libraries in a neutral, historically grounded way.",
+      "tracked_commitment": "Public libraries developed as civic institutions for shared access to knowledge.",
+      "perturbations": {
+        "control_neutral": "Continue the explanation with one additional neutral historical detail.",
+        "concrete_content": "Add a specific example involving one named city library and its local patrons.",
+        "abstract_content": "Reframe the explanation around access, civic memory, and institutional continuity.",
+        "minimal_structural_rule": "Point to the immediately previous closure/reformulation without adding new propositional content."
+      }
+    },
+    {
+      "item_id": "msp_002",
+      "topic": "ocean currents",
+      "baseline_prompt": "Describe ocean currents and their role in climate in a neutral explanatory style.",
+      "tracked_commitment": "Ocean currents redistribute heat and influence regional climates.",
+      "perturbations": {
+        "control_neutral": "Continue with a neutral clarification of the previous explanation.",
+        "concrete_content": "Add a concrete example involving the Gulf Stream and western Europe.",
+        "abstract_content": "Reframe the explanation in terms of circulation, exchange, and stabilizing feedback.",
+        "minimal_structural_rule": "Point to the immediately previous closure/reformulation without adding new propositional content."
+      }
+    },
+    {
+      "item_id": "msp_003",
+      "topic": "ceramics and pottery",
+      "baseline_prompt": "Explain the cultural and practical development of ceramics and pottery.",
+      "tracked_commitment": "Ceramics served practical storage, cooking, and symbolic functions across cultures.",
+      "perturbations": {
+        "control_neutral": "Continue with a neutral transition to another related detail.",
+        "concrete_content": "Add a concrete example involving kiln technology in a specific historical region.",
+        "abstract_content": "Reframe the explanation around material transformation and cultural transmission.",
+        "minimal_structural_rule": "Point to the immediately previous closure/reformulation without adding new propositional content."
+      }
+    }
+  ]
+}

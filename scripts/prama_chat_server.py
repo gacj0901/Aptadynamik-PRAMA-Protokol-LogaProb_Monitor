@@ -142,7 +142,7 @@ def call_openai(recorder: SessionRecorder, user_message: str):
     choice = response.choices[0]
     assistant_message = choice.message.content or ""
     logprobs_content = choice.logprobs.content if choice.logprobs else []
-    return assistant_message, extract_openai_tokens(logprobs_content)
+    return assistant_message, extract_openai_tokens(logprobs_content), choice.finish_reason
 
 
 def call_dry(recorder: SessionRecorder, user_message: str):
@@ -151,7 +151,7 @@ def call_dry(recorder: SessionRecorder, user_message: str):
         "stand-in answer so PRAMA Monitor can record geometry metrics without an API key. "
         f"Your message was: {user_message}"
     )
-    return assistant_message, synthetic_tokens(assistant_message)
+    return assistant_message, synthetic_tokens(assistant_message), "stop"
 
 
 def resolve_session(session_id: str) -> SessionRecorder:
@@ -175,11 +175,17 @@ def chat(request: ChatRequest):
         raise HTTPException(status_code=400, detail="Session is closed")
 
     if os.environ.get("OPENAI_API_KEY"):
-        assistant_message, tokens = call_openai(recorder, request.user_message)
+        assistant_message, tokens, finish_reason = call_openai(recorder, request.user_message)
     else:
-        assistant_message, tokens = call_dry(recorder, request.user_message)
+        assistant_message, tokens, finish_reason = call_dry(recorder, request.user_message)
     windows = compute_windows(tokens)
-    turn = recorder.append_turn(request.user_message, assistant_message, tokens, windows)
+    turn = recorder.append_turn(
+        request.user_message,
+        assistant_message,
+        tokens,
+        windows,
+        finish_reason=finish_reason,
+    )
     summary = recorder.live_summary()
 
     def stream():

@@ -2,288 +2,282 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import dataclass
 from pathlib import Path
 from statistics import mean
-from typing import Any, Dict, Iterable, List, Sequence
+from typing import Any, Dict, List, Sequence
 
-
-CONSTITUTIVE_KEYWORDS = (
-    "must",
-    "cannot",
-    "contradict",
-    "constraint",
-    "role",
-    "identity",
-    "system",
-    "ignore",
-    "rules",
-    "always",
-    "never",
-    "exactly",
+from aptadynamik.observer.paramend_rayleigh import (
+    estimate_mu_series_from_turns,
+    estimate_mu_star_from_baseline,
+    rayleigh_summary,
 )
 
 
-@dataclass
-class SignatureResult:
-    signature: str
-    triggered: bool
-    score: float
-    threshold: float
-    detail: str
-
-    def as_dict(self) -> Dict[str, Any]:
-        return {
-            "signature": self.signature,
-            "triggered": self.triggered,
-            "score": round(self.score, 6),
-            "threshold": round(self.threshold, 6),
-            "detail": self.detail,
-        }
+EPSILON = 1e-9
 
 
-def viability_from_window(window: Dict[str, Any]) -> float:
-    return float(window.get("rigidity", 0.0)) - float(window.get("uncertainty", 0.0))
+def _as_floats(series: Sequence[float]) -> List[float]:
+    return [float(value) for value in series]
 
 
-def load_session_raw(path: str | Path) -> Dict[str, Any]:
-    with Path(path).open(encoding="utf-8") as f:
-        return json.load(f)
-
-
-def session_to_observed_series(session: Dict[str, Any]) -> List[Dict[str, Any]]:
-    rows: List[Dict[str, Any]] = []
-    for turn in session.get("turns", []):
-        user_message = turn.get("user_message", "")
-        target = classify_prompt_target(user_message)
-        turn_index = int(turn.get("turn_index", len(rows)))
-        for window in turn.get("windows", []):
-            row = {
-                "session_id": session.get("session_id", ""),
-                "model": session.get("model", ""),
-                "turn_index": turn_index,
-                "window_index": int(window.get("window_index", len(rows))),
-                "pressure": pressure_proxy(user_message, turn_index),
-                "target": target,
-                "rigidity": float(window.get("rigidity", 0.0)),
-                "uncertainty": float(window.get("uncertainty", 0.0)),
-                "viability": viability_from_window(window),
-            }
-            rows.append(row)
-    return rows
-
-
-def pressure_proxy(user_message: str, turn_index: int) -> float:
-    text = user_message.lower()
-    keyword_load = sum(1 for word in CONSTITUTIVE_KEYWORDS if word in text)
-    return min(1.0, 0.1 * turn_index + 0.2 * keyword_load)
-
-
-def classify_prompt_target(user_message: str) -> str:
-    text = user_message.lower()
-    if any(word in text for word in CONSTITUTIVE_KEYWORDS):
-        return "constitutive"
-    return "peripheral"
-
-
-def adjacent_jumps(values: Sequence[float]) -> List[float]:
-    return [abs(b - a) for a, b in zip(values, values[1:])]
-
-
-def detect_discontinuity(values: Sequence[float], threshold: float = 0.35) -> SignatureResult:
-    jumps = adjacent_jumps(values)
-    score = max(jumps) if jumps else 0.0
-    return SignatureResult(
-        signature="discontinuity",
-        triggered=score >= threshold,
-        score=score,
-        threshold=threshold,
-        detail="maximum adjacent viability/rigidity jump",
-    )
-
-
-def detect_hysteresis(
-    pressures: Sequence[float],
-    responses: Sequence[float],
-    threshold: float = 0.05,
-) -> SignatureResult:
-    if len(pressures) < 4 or len(pressures) != len(responses):
-        return SignatureResult("hysteresis", False, 0.0, threshold, "insufficient pressure sweep")
-
-    midpoint = len(pressures) // 2
-    up = list(zip(pressures[:midpoint], responses[:midpoint]))
-    down = list(zip(pressures[midpoint:], responses[midpoint:]))
-    if not up or not down:
-        return SignatureResult("hysteresis", False, 0.0, threshold, "missing up/down branches")
-    if up[-1][0] <= up[0][0] or down[-1][0] >= down[0][0]:
-        return SignatureResult("hysteresis", False, 0.0, threshold, "requires rising and falling pressure branches")
-
-    up_mid = mean([r for p, r in up if p >= 0.35]) if any(p >= 0.35 for p, _ in up) else mean(r for _, r in up)
-    down_mid = mean([r for p, r in down if p >= 0.35]) if any(p >= 0.35 for p, _ in down) else mean(r for _, r in down)
-    score = abs(up_mid - down_mid)
-    return SignatureResult(
-        signature="hysteresis",
-        triggered=score >= threshold,
-        score=score,
-        threshold=threshold,
-        detail="branch separation between rising and falling pressure sweeps",
-    )
-
-
-def lag1_autocorrelation(values: Sequence[float]) -> float:
+def lag1_ac(series: Sequence[float]) -> float:
+    values = _as_floats(series)
     if len(values) < 3:
         return 0.0
-    xs = list(values[:-1])
-    ys = list(values[1:])
+    xs = values[:-1]
+    ys = values[1:]
     mx = mean(xs)
     my = mean(ys)
     denom = math.sqrt(sum((x - mx) ** 2 for x in xs) * sum((y - my) ** 2 for y in ys))
-    if denom == 0:
+    if denom <= EPSILON:
         return 0.0
     return sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / denom
 
 
-def variance(values: Sequence[float]) -> float:
+def variance(series: Sequence[float]) -> float:
+    values = _as_floats(series)
     if len(values) < 2:
         return 0.0
-    m = mean(values)
-    return sum((v - m) ** 2 for v in values) / len(values)
+    center = mean(values)
+    return sum((value - center) ** 2 for value in values) / len(values)
 
 
-def detect_critical_slowing(values: Sequence[float], threshold: float = 0.08) -> SignatureResult:
-    if len(values) < 8:
-        return SignatureResult("critical_slowing", False, 0.0, threshold, "insufficient series length")
-    midpoint = len(values) // 2
-    early = values[:midpoint]
-    late = values[midpoint:]
-    autocorr_gain = lag1_autocorrelation(late) - lag1_autocorrelation(early)
-    variance_gain = variance(late) - variance(early)
-    drops = [(idx, values[idx] - values[idx + 1]) for idx in range(len(values) - 1)]
-    drop_idx, max_drop = max(drops, key=lambda item: item[1])
-    recovery_score = 0.0
-    if max_drop > 0.25:
-        pre_value = values[drop_idx]
-        half_recovery = values[drop_idx + 1] + max_drop * 0.5
-        recovery_steps = 0
-        for value in values[drop_idx + 1 :]:
-            recovery_steps += 1
-            if value >= half_recovery or value >= pre_value:
-                break
-        recovery_score = recovery_steps / len(values)
-    score = max(autocorr_gain, 0.0) + max(variance_gain, 0.0) + recovery_score
-    return SignatureResult(
-        signature="critical_slowing",
-        triggered=score >= threshold,
-        score=score,
-        threshold=threshold,
-        detail="late autocorrelation/variance gain",
-    )
+def _adjacent_drops(values: Sequence[float]) -> List[float]:
+    return [float(a) - float(b) for a, b in zip(values, values[1:])]
 
 
-def detect_structural_target_effect(rows: Sequence[Dict[str, Any]], threshold: float = 0.10) -> SignatureResult:
-    peripheral = [float(row["viability"]) for row in rows if row.get("target") == "peripheral"]
-    constitutive = [float(row["viability"]) for row in rows if row.get("target") == "constitutive"]
-    if not peripheral or not constitutive:
-        return SignatureResult(
-            "structural_target_effect",
-            False,
-            0.0,
-            threshold,
-            "requires both peripheral and constitutive prompts",
-        )
-    score = mean(peripheral) - mean(constitutive)
-    return SignatureResult(
-        signature="structural_target_effect",
-        triggered=score >= threshold,
-        score=score,
-        threshold=threshold,
-        detail="peripheral viability minus constitutive viability",
-    )
+def _transition_turn(values: Sequence[float]) -> int:
+    if len(values) < 2:
+        return -1
+    drops = _adjacent_drops(values)
+    return max(range(len(drops)), key=lambda idx: abs(drops[idx])) + 1
 
 
-def evaluate_series(rows: Sequence[Dict[str, Any]], value_key: str = "viability") -> List[SignatureResult]:
-    values = [float(row.get(value_key, 0.0)) for row in rows]
-    pressures = [float(row.get("pressure", idx / max(len(rows) - 1, 1))) for idx, row in enumerate(rows)]
-    return [
-        detect_discontinuity(values),
-        detect_hysteresis(pressures, values),
-        detect_critical_slowing(values),
-        detect_structural_target_effect(rows),
-    ]
+def sig_discontinuity(series: Sequence[float]) -> Dict[str, Any]:
+    values = _as_floats(series)
+    if len(values) < 2:
+        return {
+            "triggered": False,
+            "discontinuity_ratio": 0.0,
+            "strongest_transition_turn": -1,
+            "max_jump": 0.0,
+            "local_drops": [],
+        }
 
-
-def smooth_synthetic_rows(n: int = 60) -> List[Dict[str, Any]]:
-    rows = []
-    for i in range(n):
-        pressure = i / max(n - 1, 1)
-        viability = 0.78 - 0.18 * pressure + 0.01 * math.sin(i / 5.0)
-        rows.append(
-            {
-                "session_id": "synthetic_smooth",
-                "model": "synthetic_smooth",
-                "turn_index": i,
-                "window_index": i,
-                "pressure": pressure,
-                "target": "peripheral",
-                "rigidity": viability + 0.1,
-                "uncertainty": 0.1,
-                "viability": viability,
-            }
-        )
-    return rows
-
-
-def fold_synthetic_rows(n: int = 80) -> List[Dict[str, Any]]:
-    rows = []
-    half = n // 2
-    for i in range(n):
-        if i < half:
-            pressure = i / max(half - 1, 1)
-            viability = 0.86 - 0.18 * pressure
-            if pressure > 0.62:
-                viability -= 0.45
-            target = "peripheral" if i % 5 else "constitutive"
-        else:
-            pressure = 1.0 - ((i - half) / max(half - 1, 1))
-            viability = 0.36 + 0.08 * pressure
-            if pressure < 0.32:
-                viability += 0.28
-            target = "constitutive" if i % 4 == 0 else "peripheral"
-        viability += 0.08 * math.sin(i / 2.0)
-        rows.append(
-            {
-                "session_id": "synthetic_fold",
-                "model": "synthetic_fold",
-                "turn_index": i,
-                "window_index": i,
-                "pressure": pressure,
-                "target": target,
-                "rigidity": viability + 0.12,
-                "uncertainty": 0.12,
-                "viability": viability,
-            }
-        )
-    return rows
-
-
-def synthetic_validation() -> Dict[str, List[SignatureResult]]:
+    jumps = [abs(b - a) for a, b in zip(values, values[1:])]
+    local_drops = _adjacent_drops(values)
+    max_jump = max(jumps)
+    observed_range = max(values) - min(values)
+    ratio = max_jump / (observed_range + EPSILON)
+    transition_turn = jumps.index(max_jump) + 1
     return {
-        "fold": evaluate_series(fold_synthetic_rows()),
-        "smooth": evaluate_series(smooth_synthetic_rows()),
+        "triggered": bool(max_jump >= 0.25 and ratio >= 0.45),
+        "discontinuity_ratio": ratio,
+        "strongest_transition_turn": transition_turn,
+        "max_jump": max_jump,
+        "local_drops": local_drops,
     }
 
 
-def load_sessions_from_path(path: str | Path) -> List[Dict[str, Any]]:
-    root = Path(path)
-    if root.is_file():
-        files = [root]
-    else:
-        files = sorted(root.rglob("session_*_raw.json"))
-    return [load_session_raw(file) for file in files]
+def sig_hysteresis(up_series: Sequence[float], down_series: Sequence[float]) -> Dict[str, Any]:
+    up = _as_floats(up_series)
+    down = _as_floats(down_series)
+    count = min(len(up), len(down))
+    if count == 0:
+        return {"triggered": False, "hysteresis_area": 0.0}
+
+    aligned_down = list(reversed(down))[:count]
+    aligned_up = up[:count]
+    area = sum(abs(a - b) for a, b in zip(aligned_up, aligned_down)) / count
+    return {"triggered": bool(area >= 0.05), "hysteresis_area": area}
 
 
-def rows_from_sessions(sessions: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    rows: List[Dict[str, Any]] = []
-    for session in sessions:
-        rows.extend(session_to_observed_series(session))
-    return rows
+def sig_critical_slowing(series: Sequence[float], window: int = 6) -> Dict[str, Any]:
+    values = _as_floats(series)
+    if len(values) < max(window * 2, 4):
+        return {
+            "triggered": False,
+            "critical_slowing_score": 0.0,
+            "autocorrelation_gain": 0.0,
+            "variance_gain": 0.0,
+        }
+
+    early = values[:window]
+    late = values[-window:]
+    autocorrelation_gain = lag1_ac(late) - lag1_ac(early)
+    variance_gain = variance(late) - variance(early)
+    score = max(0.0, autocorrelation_gain) + max(0.0, variance_gain)
+
+    drops = _adjacent_drops(values)
+    if drops:
+        largest_drop = max(drops)
+        if largest_drop > 0.20:
+            drop_idx = drops.index(largest_drop)
+            recovery_target = values[drop_idx + 1] + largest_drop * 0.5
+            recovery_steps = 0
+            for value in values[drop_idx + 1 :]:
+                recovery_steps += 1
+                if value >= recovery_target:
+                    break
+            score += recovery_steps / len(values)
+
+    return {
+        "triggered": bool(score >= 0.08),
+        "critical_slowing_score": score,
+        "autocorrelation_gain": autocorrelation_gain,
+        "variance_gain": variance_gain,
+    }
+
+
+def sig_structural_target(
+    peripheral_series: Sequence[float],
+    constitutive_series: Sequence[float],
+) -> Dict[str, Any]:
+    peripheral = _as_floats(peripheral_series)
+    constitutive = _as_floats(constitutive_series)
+    if len(peripheral) < 2 or len(constitutive) < 2:
+        return {
+            "triggered": False,
+            "structural_target_shift": 0.0,
+            "peripheral_transition_turn": -1,
+            "constitutive_transition_turn": -1,
+        }
+
+    peripheral_turn = _transition_turn(peripheral)
+    constitutive_turn = _transition_turn(constitutive)
+    peripheral_disc = sig_discontinuity(peripheral)["discontinuity_ratio"]
+    constitutive_disc = sig_discontinuity(constitutive)["discontinuity_ratio"]
+    shift = float(peripheral_turn - constitutive_turn)
+    if shift == 0 and constitutive_disc > peripheral_disc:
+        shift = constitutive_disc - peripheral_disc
+
+    return {
+        "triggered": bool(shift > 0),
+        "structural_target_shift": shift,
+        "peripheral_transition_turn": peripheral_turn,
+        "constitutive_transition_turn": constitutive_turn,
+    }
+
+
+def _require_mapping(parent: Dict[str, Any], key: str, context: str) -> Dict[str, Any]:
+    value = parent.get(key)
+    if not isinstance(value, dict):
+        raise ValueError(f"{context} missing required mapping '{key}'")
+    return value
+
+
+def _require_number(parent: Dict[str, Any], key: str, context: str) -> float:
+    if key not in parent:
+        raise ValueError(f"{context} missing required numeric field '{key}'")
+    try:
+        return float(parent[key])
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{context} field '{key}' must be numeric") from exc
+
+
+def _summary_value(summary: Dict[str, Any], preferred: str, fallback: str, context: str) -> float:
+    if preferred in summary:
+        return _require_number(summary, preferred, context)
+    if fallback in summary:
+        return _require_number(summary, fallback, context)
+    raise ValueError(f"{context} missing required numeric field '{preferred}'")
+
+
+def viability_from_turn(turn: Dict[str, Any]) -> Dict[str, Any]:
+    context = f"turn {turn.get('turn_index', '<unknown>')}"
+    summary = _require_mapping(turn, "summary", context)
+
+    if "turn_index" not in turn:
+        raise ValueError("turn missing required field 'turn_index'")
+    if "token_count" not in turn:
+        raise ValueError(f"{context} missing required numeric field 'token_count'")
+
+    turn_index = int(_require_number(turn, "turn_index", context))
+    token_count = int(_require_number(turn, "token_count", context))
+    avg_rigidity = _require_number(summary, "avg_rigidity", context)
+    avg_uncertainty = _require_number(summary, "avg_uncertainty", context)
+    avg_entropy_norm = _require_number(summary, "avg_entropy_norm", context)
+    entropy_range = _summary_value(summary, "max_entropy_range", "entropy_range", context)
+    entropy_std = _summary_value(summary, "max_entropy_std", "entropy_std", context)
+
+    return {
+        "turn_index": turn_index,
+        "viability": avg_rigidity - avg_uncertainty,
+        "avg_rigidity": avg_rigidity,
+        "avg_uncertainty": avg_uncertainty,
+        "avg_entropy_norm": avg_entropy_norm,
+        "entropy_range": entropy_range,
+        "entropy_std": entropy_std,
+        "token_count": token_count,
+    }
+
+
+def load_raw_session(path: str | Path) -> Dict[str, Any]:
+    with Path(path).open(encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def viability_series_from_raw(raw: Dict[str, Any]) -> List[Dict[str, Any]]:
+    turns = raw.get("turns")
+    if not isinstance(turns, list):
+        raise ValueError("raw session missing required list 'turns'")
+    return [viability_from_turn(turn) for turn in turns]
+
+
+def paramend_rayleigh_fields_from_turns(turns: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    if not turns:
+        return {
+            "paramend_rayleigh_median": None,
+            "paramend_rayleigh_max": None,
+            "min_restitution_g": None,
+            "early_warning_turn": -1,
+            "mu_star": None,
+        }
+    mu_series = estimate_mu_series_from_turns(turns)
+    mu_star = estimate_mu_star_from_baseline(turns)
+    return rayleigh_summary(mu_series, mu_star=mu_star)
+
+
+def synthetic_fold_series(n: int = 72) -> Dict[str, List[float]]:
+    half = n // 2
+    up: List[float] = []
+    down: List[float] = []
+    for i in range(half):
+        pressure = i / max(half - 1, 1)
+        value = 0.88 - 0.14 * pressure
+        if pressure > 0.58:
+            value -= 0.42
+        value += 0.035 * math.sin(i / 1.8)
+        up.append(value)
+    for i in range(half):
+        pressure = 1.0 - i / max(half - 1, 1)
+        value = 0.42 + 0.10 * pressure
+        if pressure < 0.28:
+            value += 0.28
+        value += 0.055 * math.sin(i / 1.7)
+        down.append(value)
+    return {"up": up, "down": down, "combined": up + down}
+
+
+def synthetic_smooth_series(n: int = 72) -> Dict[str, List[float]]:
+    half = n // 2
+    up = [0.82 - 0.12 * (i / max(half - 1, 1)) + 0.006 * math.sin(i / 5.0) for i in range(half)]
+    down = [0.70 + 0.12 * (i / max(half - 1, 1)) + 0.006 * math.sin(i / 5.0) for i in range(half)]
+    return {"up": up, "down": down, "combined": up + down}
+
+
+def synthetic_validation() -> Dict[str, Dict[str, Any]]:
+    fold = synthetic_fold_series()
+    smooth = synthetic_smooth_series()
+    return {
+        "fold": {
+            "discontinuity": sig_discontinuity(fold["up"]),
+            "hysteresis": sig_hysteresis(fold["up"], fold["down"]),
+            "critical_slowing": sig_critical_slowing(fold["combined"]),
+        },
+        "smooth": {
+            "discontinuity": sig_discontinuity(smooth["up"]),
+            "hysteresis": sig_hysteresis(smooth["up"], smooth["down"]),
+            "critical_slowing": sig_critical_slowing(smooth["combined"]),
+        },
+    }

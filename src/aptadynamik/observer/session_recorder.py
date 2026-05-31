@@ -40,6 +40,7 @@ class SessionRecorder:
         tokens: List[Dict[str, Any]],
         windows: List[Dict[str, Any]],
         turn_summary: Optional[Dict[str, Any]] = None,
+        finish_reason: Optional[str] = None,
     ) -> Dict[str, Any]:
         turn_index = len(self.turns)
         summary = turn_summary or summarize_windows(windows)
@@ -48,6 +49,7 @@ class SessionRecorder:
             "timestamp": utc_now(),
             "user_message": user_message,
             "assistant_message": assistant_message,
+            "finish_reason": finish_reason,
             "token_count": len(tokens),
             "tokens": tokens,
             "windows": windows,

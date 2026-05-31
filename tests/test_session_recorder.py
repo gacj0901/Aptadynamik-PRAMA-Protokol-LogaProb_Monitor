@@ -26,7 +26,7 @@ def sample_windows():
 def recorder_with_turn(model="test/model:fixture v1"):
     recorder = SessionRecorder.create(model=model, session_id="test-session-abc123")
     tokens = [{"token": "hello", "top_logprobs": [-0.1, -0.5]}]
-    recorder.append_turn("Hi", "Hello there", tokens, sample_windows())
+    recorder.append_turn("Hi", "Hello there", tokens, sample_windows(), finish_reason="stop")
     return recorder
 
 
@@ -102,6 +102,7 @@ def test_metadata_and_raw_store_output_folder_metadata(tmp_path):
     assert raw["output_folder_name"] == output_dir.name
     assert raw["output_dir"] == str(output_dir)
     assert raw["generated_at"] == metadata["generated_at"]
+    assert raw["turns"][0]["finish_reason"] == "stop"
 
 
 def test_report_and_conversation_files_use_simple_names(tmp_path):
@@ -116,6 +117,7 @@ def test_report_and_conversation_files_use_simple_names(tmp_path):
 
     conversation_json = json.loads(output_dir.joinpath("conversation.json").read_text(encoding="utf-8"))
     assert conversation_json["session_id"] == "test-session-abc123"
+    assert conversation_json["turns"][0]["finish_reason"] == "stop"
     assert conversation_json["turns"][0]["metrics_summary"]["token_count"] == 1
     assert "tokens" not in conversation_json["turns"][0]
 

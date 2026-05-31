@@ -1,94 +1,159 @@
 import json
+import importlib.util
 from pathlib import Path
 
 import pytest
 
 from aptadynamik.observer.qualitative_signatures import (
-    detect_discontinuity,
-    detect_structural_target_effect,
-    evaluate_series,
-    load_sessions_from_path,
-    session_to_observed_series,
-    smooth_synthetic_rows,
+    sig_discontinuity,
+    sig_hysteresis,
+    synthetic_smooth_series,
     synthetic_validation,
+    viability_from_turn,
 )
 
 
-def test_synthetic_fold_triggers_required_signatures_and_smooth_does_not():
+RUNNER_PATH = Path(__file__).resolve().parents[1] / "scripts" / "prama_phase_signature_runner.py"
+RUNNER_SPEC = importlib.util.spec_from_file_location("prama_phase_signature_runner", RUNNER_PATH)
+assert RUNNER_SPEC is not None and RUNNER_SPEC.loader is not None
+RUNNER = importlib.util.module_from_spec(RUNNER_SPEC)
+RUNNER_SPEC.loader.exec_module(RUNNER)
+run_from_raw = RUNNER.run_from_raw
+
+
+def test_synthetic_fold_triggers_discontinuity():
     validation = synthetic_validation()
-    fold = {result.signature: result.triggered for result in validation["fold"]}
-    smooth = {result.signature: result.triggered for result in validation["smooth"]}
 
-    assert fold["discontinuity"]
-    assert fold["hysteresis"]
-    assert fold["critical_slowing"]
-    assert not smooth["discontinuity"]
-    assert not smooth["hysteresis"]
-    assert not smooth["critical_slowing"]
+    assert validation["fold"]["discontinuity"]["triggered"]
 
 
-def test_viability_proxy_from_raw_session_window():
-    session = {
-        "session_id": "test-session",
+def test_synthetic_smooth_does_not_trigger_discontinuity():
+    validation = synthetic_validation()
+
+    assert not validation["smooth"]["discontinuity"]["triggered"]
+
+
+def test_viability_from_turn_computes_rigidity_minus_uncertainty():
+    turn = {
+        "turn_index": 2,
+        "token_count": 17,
+        "summary": {
+            "avg_rigidity": 0.72,
+            "avg_uncertainty": 0.21,
+            "avg_entropy_norm": 0.35,
+            "max_entropy_range": 0.44,
+            "max_entropy_std": 0.12,
+        },
+    }
+
+    result = viability_from_turn(turn)
+
+    assert result["turn_index"] == 2
+    assert result["viability"] == pytest.approx(0.51)
+    assert result["entropy_range"] == pytest.approx(0.44)
+    assert result["entropy_std"] == pytest.approx(0.12)
+
+
+def test_viability_from_turn_fails_clearly_on_missing_summary_field():
+    turn = {"turn_index": 0, "token_count": 1, "summary": {"avg_rigidity": 0.5}}
+
+    with pytest.raises(ValueError, match="avg_uncertainty"):
+        viability_from_turn(turn)
+
+
+def test_sig_discontinuity_detects_sharp_drop():
+    result = sig_discontinuity([0.91, 0.88, 0.84, 0.22, 0.20])
+
+    assert result["triggered"]
+    assert result["strongest_transition_turn"] == 3
+
+
+def test_sig_hysteresis_returns_positive_area_for_separated_branches():
+    result = sig_hysteresis([0.9, 0.82, 0.74, 0.35], [0.50, 0.55, 0.60, 0.65])
+
+    assert result["triggered"]
+    assert result["hysteresis_area"] > 0
+
+
+def test_loading_minimal_raw_json_produces_phase_signatures_csv(tmp_path):
+    raw = {
+        "session_id": "minimal",
         "model": "test-model",
         "turns": [
             {
                 "turn_index": 0,
-                "user_message": "ordinary peripheral prompt",
-                "windows": [
-                    {
-                        "window_index": 0,
-                        "rigidity": 0.7,
-                        "uncertainty": 0.2,
-                    }
-                ],
+                "token_count": 10,
+                "summary": {
+                    "avg_rigidity": 0.8,
+                    "avg_uncertainty": 0.1,
+                    "avg_entropy_norm": 0.2,
+                    "max_entropy_range": 0.1,
+                    "max_entropy_std": 0.02,
+                },
+            },
+            {
+                "turn_index": 1,
+                "token_count": 11,
+                "summary": {
+                    "avg_rigidity": 0.76,
+                    "avg_uncertainty": 0.12,
+                    "avg_entropy_norm": 0.25,
+                    "max_entropy_range": 0.14,
+                    "max_entropy_std": 0.03,
+                },
+            },
+            {
+                "turn_index": 2,
+                "token_count": 12,
+                "summary": {
+                    "avg_rigidity": 0.35,
+                    "avg_uncertainty": 0.4,
+                    "avg_entropy_norm": 0.55,
+                    "max_entropy_range": 0.51,
+                    "max_entropy_std": 0.18,
+                },
+            },
+        ],
+    }
+    raw_path = tmp_path / "session_minimal_raw.json"
+    raw_path.write_text(json.dumps(raw), encoding="utf-8")
+
+    run_from_raw(raw_path, tmp_path / "phase_analysis_minimal")
+
+    assert (tmp_path / "phase_analysis_minimal" / "phase_signatures.csv").exists()
+
+
+def test_report_includes_required_language(tmp_path):
+    raw = {
+        "session_id": "report-test",
+        "model": "test-model",
+        "turns": [
+            {
+                "turn_index": 0,
+                "token_count": 8,
+                "summary": {
+                    "avg_rigidity": 0.7,
+                    "avg_uncertainty": 0.2,
+                    "avg_entropy_norm": 0.3,
+                    "max_entropy_range": 0.2,
+                    "max_entropy_std": 0.05,
+                },
             }
         ],
     }
+    raw_path = tmp_path / "session_report_raw.json"
+    output_dir = tmp_path / "phase_report"
+    raw_path.write_text(json.dumps(raw), encoding="utf-8")
 
-    rows = session_to_observed_series(session)
+    run_from_raw(raw_path, output_dir)
+    report = (output_dir / "phase_report.md").read_text(encoding="utf-8")
 
-    assert rows[0]["viability"] == pytest.approx(0.5)
-    assert rows[0]["target"] == "peripheral"
-
-
-def test_discontinuity_detects_large_observed_jump():
-    result = detect_discontinuity([0.9, 0.88, 0.2, 0.18])
-
-    assert result.triggered
-
-
-def test_structural_target_effect_compares_peripheral_and_constitutive_rows():
-    rows = [
-        {"target": "peripheral", "viability": 0.8},
-        {"target": "peripheral", "viability": 0.7},
-        {"target": "constitutive", "viability": 0.3},
-        {"target": "constitutive", "viability": 0.4},
-    ]
-
-    result = detect_structural_target_effect(rows)
-
-    assert result.triggered
-    assert result.score > 0
+    assert "PRAMA Phase Signature Report" in report
+    assert "viability = avg_rigidity - avg_uncertainty" in report
+    assert "Methodological Note" in report
 
 
-def test_load_sessions_from_path_reads_monitor_raw_json(tmp_path):
-    payload = {
-        "session_id": "test-session",
-        "model": "model-a",
-        "turns": [],
-    }
-    raw_path = tmp_path / "session_test_raw.json"
-    raw_path.write_text(json.dumps(payload), encoding="utf-8")
+def test_smooth_series_has_no_discontinuity():
+    smooth = synthetic_smooth_series()
 
-    sessions = load_sessions_from_path(tmp_path)
-
-    assert sessions[0]["session_id"] == "test-session"
-
-
-def test_smooth_series_has_no_phase_transition_signatures():
-    results = {result.signature: result.triggered for result in evaluate_series(smooth_synthetic_rows())}
-
-    assert not results["discontinuity"]
-    assert not results["hysteresis"]
-    assert not results["critical_slowing"]
+    assert not sig_discontinuity(smooth["up"])["triggered"]

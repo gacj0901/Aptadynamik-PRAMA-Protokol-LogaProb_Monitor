@@ -152,6 +152,13 @@
       gap: 10px;
     }
 
+    .monitor-caption {
+      text-align: center;
+      color: var(--muted);
+      font: 11px var(--mono);
+      margin-top: 4px;
+    }
+
     .controls, .metrics, .downloads {
       padding: 12px 14px;
       border-bottom: 1px solid var(--border);
@@ -185,7 +192,17 @@
     }
 
     .downloads {
+      min-height: 0;
       overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #links {
+      overflow: auto;
+      min-height: 0;
+      max-height: 210px;
+      padding-right: 3px;
     }
 
     .status {
@@ -218,11 +235,12 @@
         <img class="brand" src="../png AptadynamiK logo l.png" alt="" />
         <img class="toolmark" src="../logo prama.png" alt="" />
       </div>
+      <div class="monitor-caption">ProbLog Monitor</div>
     </header>
 
     <section class="controls">
-      <button id="startBtn">Start Measurement</button>
-      <button id="stopBtn" disabled>Stop Measurement</button>
+      <button id="startBtn">Start Session</button>
+      <button id="stopBtn" disabled>Stop Session</button>
       <button id="reportBtn" disabled>Generate Results</button>
     </section>
 
@@ -239,7 +257,7 @@
     </section>
 
     <section class="downloads">
-      <h1>Downloads</h1>
+      <h1>Document archive</h1>
       <div class="sub" style="margin-bottom: 12px;">Generate results to enable links</div>
       <div id="links"></div>
     </section>

@@ -241,6 +241,7 @@ class ReportWriter:
                     "#### Metrics",
                     "",
                     f"- tokens: `{turn['token_count']}`",
+                    f"- finish_reason: `{turn.get('finish_reason') or ''}`",
                     f"- windows: `{len(turn['windows'])}`",
                     f"- avg_entropy_norm: `{turn_summary.get('avg_entropy_norm', 0.0)}`",
                     f"- avg_gap_norm: `{turn_summary.get('avg_gap_norm', 0.0)}`",
@@ -270,6 +271,7 @@ class ReportWriter:
         summary = turn.get("summary", {})
         return {
             "token_count": turn.get("token_count", 0),
+            "finish_reason": turn.get("finish_reason"),
             "avg_entropy_norm": summary.get("avg_entropy_norm", 0.0),
             "avg_gap_norm": summary.get("avg_gap_norm", 0.0),
             "avg_rigidity": summary.get("avg_rigidity", 0.0),
@@ -297,6 +299,7 @@ class ReportWriter:
                     f"## Turn {turn['turn_index'] + 1}",
                     "",
                     f"- token_count: `{metrics['token_count']}`",
+                    f"- finish_reason: `{metrics['finish_reason'] or ''}`",
                     f"- avg_entropy_norm: `{metrics['avg_entropy_norm']}`",
                     f"- avg_rigidity: `{metrics['avg_rigidity']}`",
                     f"- avg_uncertainty: `{metrics['avg_uncertainty']}`",
@@ -327,6 +330,7 @@ class ReportWriter:
                     "timestamp": turn["timestamp"],
                     "user_message": turn["user_message"],
                     "assistant_message": turn["assistant_message"],
+                    "finish_reason": turn.get("finish_reason"),
                     "token_count": turn["token_count"],
                     "metrics_summary": self._compact_turn_metrics(turn),
                 }
