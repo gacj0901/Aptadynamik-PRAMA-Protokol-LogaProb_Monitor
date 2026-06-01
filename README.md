@@ -1,4 +1,4 @@
-# AptadynamiK - PRAMA Protokol
+# AptadynamiK - PRAMA Protokol: ProbLog Monitor
 // G.A.C.J. 
 // Copyright © 2026 — Trade Secret registered with U.S. Copyright Office
 
