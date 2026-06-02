@@ -4,13 +4,22 @@ This observer module adds qualitative phase-transition signatures to PRAMA Monit
 
 ## Viability Definition
 
-The initial viability proxy is:
+The legacy viability proxy is preserved only for compatibility and comparison:
 
 ```text
-viability = avg_rigidity - avg_uncertainty
+viability_legacy = avg_rigidity - avg_uncertainty
 ```
 
-The value is computed per turn from the compact turn summary stored in PRAMA Monitor `raw.json` files.
+The corrected viability proxy is non-monotone. It penalizes absolute rigidity
+deviation from a model/session baseline `r0` and only penalizes uncertainty
+above baseline `u0`.
+
+```text
+viability_corrected = 1 - (abs(rigidity - r0) + max(0, uncertainty - u0)) / scale
+```
+
+`r0,u0` are an operational viable-point assumption, not an ontological truth.
+Corrected viability is a geometry proxy, not direct functional viability.
 
 ## Qualitative Observables
 

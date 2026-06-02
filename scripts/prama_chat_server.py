@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
+from aptadynamik.observer.prama_components import measure
 from aptadynamik.observer.report_writer import ReportWriter
 from aptadynamik.observer.session_recorder import SessionRecorder
 
@@ -74,11 +75,12 @@ def synthetic_tokens(text: str) -> List[Dict]:
     for idx, word in enumerate(words):
         entropy = 0.45 + 0.1 * math.sin(idx / 4.0)
         gap = 1.4 + 0.2 * math.cos(idx / 5.0)
+        top1 = -0.2 - 0.05 * math.sin(idx / 3.0)
         tokens.append(
             {
                 "token": word,
-                "top1_logprob": -0.2,
-                "top_logprobs": [-0.2, -0.2 - gap],
+                "top1_logprob": top1,
+                "top_logprobs": [top1, top1 - gap],
                 "gap": abs(gap),
                 "entropy": max(0.0, entropy),
             }
@@ -117,6 +119,53 @@ def compute_windows(tokens: List[Dict], window_size: int = WINDOW_SIZE) -> List[
             }
         )
     return windows
+
+
+def compute_live_prama_events(tokens: List[Dict], turn_index: int, window_size: int = WINDOW_SIZE) -> List[Dict]:
+    token_chunks = []
+    for start in range(0, len(tokens), window_size):
+        chunk = tokens[start : start + window_size]
+        if not chunk:
+            continue
+        token_chunks.append(
+            {
+                "turn_index": len(token_chunks),
+                "tokens": chunk,
+            }
+        )
+    if not token_chunks:
+        return []
+    calib_window = min(3, len(token_chunks))
+    result = measure(token_chunks, calib_window=calib_window)
+    events = []
+    for row in result["turns"]:
+        events.append(
+            {
+                "type": "prama",
+                "turn_index": turn_index,
+                "window_index": row["turn_index"],
+                "micro": round(float(row["micro"]), 6),
+                "macro": round(float(row["macro"]), 6),
+                "macro_health": round(float(row["macro_health"]), 6),
+                "acople": round(float(row["acople"]), 6),
+                "micro_drop": round(float(row["micro_drop"]), 6),
+                "viability": round(float(row["viability"]), 6),
+                "threshold_crossed": bool(row["threshold_crossed"]),
+                "boundary_side": row["boundary_side"],
+                "boundary_pressure": round(float(row["boundary_pressure"]), 6),
+                "viability_status": row["viability_status"],
+                "distance_to_threshold": round(float(row["distance_to_threshold"]), 6),
+                "rig": round(float(row["rig"]), 6),
+                "eco": round(float(row["eco"]), 6),
+                "alu": round(float(row["alu"]), 6),
+                "turb": round(float(row.get("turb", 0.0)), 6),
+                "collapse_threshold": result["collapse_threshold"],
+                "live_mode": "token_window",
+            }
+        )
+    final = events[-1].copy()
+    final["type"] = "final_prama"
+    return events + [final]
 
 
 def call_openai(recorder: SessionRecorder, user_message: str):
@@ -187,11 +236,44 @@ def chat(request: ChatRequest):
         finish_reason=finish_reason,
     )
     summary = recorder.live_summary()
+    prama_events = compute_live_prama_events(tokens, turn.get("turn_index", max(summary.get("turn_count", 1) - 1, 0)))
 
     def stream():
         step = 48
+        emitted_prama = 0
+        total_chunks = max(1, math.ceil(len(assistant_message) / step))
         for i in range(0, len(assistant_message), step):
             yield json.dumps({"type": "chunk", "text": assistant_message[i : i + step]}) + "\n"
+            target_events = math.floor(((i // step) + 1) * max(len(prama_events) - 1, 0) / total_chunks)
+            while emitted_prama < target_events:
+                yield json.dumps(prama_events[emitted_prama]) + "\n"
+                emitted_prama += 1
+        if prama_events:
+            while emitted_prama < len(prama_events):
+                yield json.dumps(prama_events[emitted_prama]) + "\n"
+                emitted_prama += 1
+        else:
+            yield json.dumps(
+                {
+                    "type": "final_prama",
+                    "turn_index": turn.get("turn_index", max(summary.get("turn_count", 1) - 1, 0)),
+                    "viability": None,
+                    "threshold_crossed": False,
+                    "boundary_side": "UNRESOLVED",
+                    "boundary_pressure": None,
+                    "viability_status": "UNRESOLVED",
+                    "distance_to_threshold": None,
+                    "micro": None,
+                    "macro": None,
+                    "macro_health": None,
+                    "acople": None,
+                    "micro_drop": None,
+                    "rig": 0.0,
+                    "eco": 0.0,
+                    "alu": 0.0,
+                    "live_mode": "turn_final_only",
+                }
+            ) + "\n"
         yield json.dumps({"type": "turn_summary", "turn": turn["summary"], "session": summary}) + "\n"
 
     return StreamingResponse(stream(), media_type="application/x-ndjson")

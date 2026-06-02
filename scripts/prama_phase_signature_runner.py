@@ -17,6 +17,7 @@ from aptadynamik.observer.qualitative_signatures import (
     synthetic_smooth_series,
     synthetic_validation,
     viability_series_from_raw,
+    viability_baseline_from_raw,
 )
 
 
@@ -38,6 +39,12 @@ SIGNATURE_FIELDS = [
     "min_viability",
     "max_viability",
     "mean_viability",
+    "viability_legacy",
+    "viability_corrected",
+    "corrected_fatigue",
+    "baseline_r0",
+    "baseline_u0",
+    "baseline_method",
 ]
 
 COMPARATIVE_FIELDS = [
@@ -49,6 +56,20 @@ COMPARATIVE_FIELDS = [
     "constitutive_hysteresis",
     "max_discontinuity",
     "max_critical_slowing",
+]
+
+TURN_CORRECTED_FIELDS = [
+    "turn_index",
+    "avg_rigidity",
+    "avg_uncertainty",
+    "avg_entropy_norm",
+    "viability_legacy",
+    "viability_corrected",
+    "corrected_fatigue",
+    "baseline_r0",
+    "baseline_u0",
+    "baseline_method",
+    "viability_scale",
 ]
 
 
@@ -68,6 +89,12 @@ def _series_stats(series: Sequence[float]) -> Dict[str, Any]:
     }
 
 
+def _mean_or_none(values: Sequence[float]) -> Optional[float]:
+    if not values:
+        return None
+    return mean(values)
+
+
 def analyze_viability_series(
     series: Sequence[float],
     *,
@@ -78,6 +105,7 @@ def analyze_viability_series(
     hysteresis_area: Optional[float] = None,
     structural_target_shift: Optional[float] = None,
     rayleigh_fields: Optional[Dict[str, Any]] = None,
+    viability_rows: Optional[Sequence[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     discontinuity = sig_discontinuity(series)
     slowing = sig_critical_slowing(series)
@@ -98,6 +126,28 @@ def analyze_viability_series(
         "early_warning_turn": (rayleigh_fields or {}).get("early_warning_turn"),
         **_series_stats(series),
     }
+    if viability_rows:
+        row.update(
+            {
+                "viability_legacy": _round(_mean_or_none([float(item["viability_legacy"]) for item in viability_rows])),
+                "viability_corrected": _round(_mean_or_none([float(item["viability_corrected"]) for item in viability_rows])),
+                "corrected_fatigue": _round(_mean_or_none([float(item["corrected_fatigue"]) for item in viability_rows])),
+                "baseline_r0": _round(viability_rows[0].get("baseline_r0")),
+                "baseline_u0": _round(viability_rows[0].get("baseline_u0")),
+                "baseline_method": viability_rows[0].get("baseline_method"),
+            }
+        )
+    else:
+        row.update(
+            {
+                "viability_legacy": None,
+                "viability_corrected": None,
+                "corrected_fatigue": None,
+                "baseline_r0": None,
+                "baseline_u0": None,
+                "baseline_method": None,
+            }
+        )
     return row
 
 
@@ -110,9 +160,19 @@ def write_csv(path: Path, rows: Sequence[Dict[str, Any]], fields: Sequence[str])
             writer.writerow({field: row.get(field) for field in fields})
 
 
+def write_phase_turns_corrected(path: Path, rows: Sequence[Dict[str, Any]]) -> None:
+    # Per-turn corrected_fatigue is currently a proxy: 1.0 - viability_corrected.
+    # The session-level Paramend/Rayleigh operator remains the fatigue model used
+    # for phase signatures until an explicit per-turn Rayleigh series is exposed.
+    write_csv(path, rows, TURN_CORRECTED_FIELDS)
+
+
 def _report_lines(metadata: Dict[str, Any], rows: Sequence[Dict[str, Any]], comparative: Optional[Dict[str, Any]] = None) -> List[str]:
     lines = [
         "# PRAMA Phase Signature Report",
+        "",
+        "LEGACY WARNING:",
+        "This report uses historical proxy metrics. It is retained for comparison and calibration history only. It is not the canonical PRAMA structural measurement.",
         "",
         "## Session / Model Metadata",
         "",
@@ -124,7 +184,10 @@ def _report_lines(metadata: Dict[str, Any], rows: Sequence[Dict[str, Any]], comp
             "",
             "## Viability Definition",
             "",
-            "viability = avg_rigidity - avg_uncertainty",
+            "Legacy viability is preserved for comparison: viability_legacy = avg_rigidity - avg_uncertainty.",
+            "Corrected viability is non-monotone: it penalizes absolute rigidity displacement from r0 and only uncertainty above u0.",
+            "corrected viability is a geometry proxy, not direct functional viability.",
+            "r0,u0 are an operational viable-point assumption estimated from baseline turns, not an ontological truth.",
             "",
             "## Detected Signatures",
             "",
@@ -155,7 +218,7 @@ def _report_lines(metadata: Dict[str, Any], rows: Sequence[Dict[str, Any]], comp
             "",
             "## Paramend Rayleigh Fatigue",
             "",
-            "mu is estimated from PRAMA Monitor turn summaries. With full-session context, mu = 1 - normalized_viability where viability = avg_rigidity - avg_uncertainty. Without normalization context, the proxy is avg_uncertainty + entropy_std + entropy_range_normalized - avg_rigidity.",
+            "mu is estimated from PRAMA Monitor turn summaries using displacement from the corrected viability baseline rather than rewarding monotone rigidity.",
             "mu_star is estimated from baseline/control/R0/R1 turns when labels exist; otherwise it uses the first 20% of turns.",
             "",
             "| model | median fatigue | max fatigue | minimum restitution g | early warning turn |",
@@ -259,11 +322,13 @@ def _load_series(path: Path) -> Tuple[Dict[str, Any], List[float], Dict[str, Any
     rows = viability_series_from_raw(raw)
     turns = raw.get("turns", [])
     rayleigh = paramend_rayleigh_fields_from_turns(turns if isinstance(turns, list) else [])
-    return raw, [row["viability"] for row in rows], rayleigh
+    return raw, [row["viability_corrected"] for row in rows], rayleigh
 
 
 def run_from_raw(raw_path: Path, output_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
     raw, series, rayleigh = _load_series(raw_path)
+    viability_rows = viability_series_from_raw(raw)
+    baseline = viability_baseline_from_raw(raw)
     session_id = raw.get("session_id", raw_path.stem)
     model = raw.get("model", "unknown")
     condition, direction = _condition_direction_from_path(raw_path)
@@ -275,9 +340,11 @@ def run_from_raw(raw_path: Path, output_dir: Optional[Path] = None) -> List[Dict
         condition=condition,
         direction=direction,
         rayleigh_fields=rayleigh,
+        viability_rows=viability_rows,
     )
     rows = [row]
     write_csv(output / "phase_signatures.csv", rows, SIGNATURE_FIELDS)
+    write_phase_turns_corrected(output / "phase_turns_corrected.csv", viability_rows)
     write_report(
         output / "phase_report.md",
         {
@@ -286,6 +353,11 @@ def run_from_raw(raw_path: Path, output_dir: Optional[Path] = None) -> List[Dict
             "model": model,
             "source_file": raw_path,
             "local drops": sig_discontinuity(series)["local_drops"],
+            "baseline_r0": baseline["r0"],
+            "baseline_u0": baseline["u0"],
+            "baseline_method": baseline["method"],
+            "viability_scale": 0.35,
+            "baseline_warning": baseline["warning"],
         },
         rows,
     )
@@ -348,6 +420,7 @@ def run_from_results(results_dir: Path) -> List[Dict[str, Any]]:
                 raw, series, rayleigh = _load_series(raw_path)
                 series_by_key[(condition, direction)] = series
                 rayleigh_by_key[(condition, direction)] = rayleigh
+                rayleigh_by_key[(condition, f"{direction}__rows")] = viability_series_from_raw(raw)
                 raw_by_key[(condition, direction)] = raw_path
                 model = raw.get("model", model)
 
@@ -367,6 +440,7 @@ def run_from_results(results_dir: Path) -> List[Dict[str, Any]]:
                     hysteresis_area=_paired_hysteresis(series_by_key, condition) if direction == "up" else None,
                     structural_target_shift=structural["structural_target_shift"] if condition == "constitutive" and direction == "up" else None,
                     rayleigh_fields=rayleigh_by_key.get((condition, direction)),
+                    viability_rows=rayleigh_by_key.get((condition, f"{direction}__rows")),
                 )
             )
 

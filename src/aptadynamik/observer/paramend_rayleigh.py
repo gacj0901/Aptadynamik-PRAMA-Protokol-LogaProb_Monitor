@@ -4,6 +4,8 @@ import math
 from statistics import mean, median
 from typing import Any, Dict, List, Optional, Sequence
 
+from aptadynamik.observer.viability_metrics import estimate_viability_baseline
+
 
 EPSILON = 1e-12
 
@@ -115,12 +117,19 @@ def _turn_viability(turn: Dict[str, Any]) -> float:
 def estimate_mu_series_from_turns(turns: Sequence[Dict[str, Any]]) -> List[float]:
     if not turns:
         return []
-    viabilities = [_turn_viability(turn) for turn in turns]
-    low = min(viabilities)
-    high = max(viabilities)
-    if high - low <= EPSILON:
-        return [estimate_mu_from_turn(turn) for turn in turns]
-    return [1.0 - ((value - low) / (high - low)) for value in viabilities]
+    baseline = estimate_viability_baseline(turns)
+    r0 = float(baseline["r0"])
+    u0 = float(baseline["u0"])
+    mu_values = []
+    for turn in turns:
+        summary = turn.get("summary")
+        if not isinstance(summary, dict):
+            raise ValueError("turn missing required summary mapping for mu estimation")
+        rigidity = _summary_value(summary, "avg_rigidity")
+        uncertainty = _summary_value(summary, "avg_uncertainty")
+        displacement = abs(rigidity - r0) + max(0.0, uncertainty - u0)
+        mu_values.append(displacement)
+    return mu_values
 
 
 def estimate_mu_star_from_baseline(

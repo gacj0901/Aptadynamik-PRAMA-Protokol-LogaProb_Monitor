@@ -11,6 +11,12 @@ from aptadynamik.observer.paramend_rayleigh import (
     estimate_mu_star_from_baseline,
     rayleigh_summary,
 )
+from aptadynamik.observer.viability_metrics import (
+    corrected_viability_rows,
+    estimate_viability_baseline,
+    viability_corrected,
+    viability_legacy,
+)
 
 
 EPSILON = 1e-9
@@ -200,9 +206,14 @@ def viability_from_turn(turn: Dict[str, Any]) -> Dict[str, Any]:
     entropy_range = _summary_value(summary, "max_entropy_range", "entropy_range", context)
     entropy_std = _summary_value(summary, "max_entropy_std", "entropy_std", context)
 
+    legacy = viability_legacy(avg_rigidity, avg_uncertainty)
+    corrected = viability_corrected(avg_rigidity, avg_uncertainty, avg_rigidity, avg_uncertainty)
     return {
         "turn_index": turn_index,
-        "viability": avg_rigidity - avg_uncertainty,
+        "viability": legacy,
+        "viability_legacy": legacy,
+        "viability_corrected": corrected,
+        "corrected_fatigue": 1.0 - corrected,
         "avg_rigidity": avg_rigidity,
         "avg_uncertainty": avg_uncertainty,
         "avg_entropy_norm": avg_entropy_norm,
@@ -221,7 +232,21 @@ def viability_series_from_raw(raw: Dict[str, Any]) -> List[Dict[str, Any]]:
     turns = raw.get("turns")
     if not isinstance(turns, list):
         raise ValueError("raw session missing required list 'turns'")
-    return [viability_from_turn(turn) for turn in turns]
+    baseline_rows = corrected_viability_rows(turns)
+    base_by_turn = {row["turn_index"]: row for row in baseline_rows}
+    rows = []
+    for turn in turns:
+        row = viability_from_turn(turn)
+        row.update(base_by_turn.get(row["turn_index"], {}))
+        rows.append(row)
+    return rows
+
+
+def viability_baseline_from_raw(raw: Dict[str, Any]) -> Dict[str, Any]:
+    turns = raw.get("turns")
+    if not isinstance(turns, list):
+        raise ValueError("raw session missing required list 'turns'")
+    return estimate_viability_baseline(turns)
 
 
 def paramend_rayleigh_fields_from_turns(turns: Sequence[Dict[str, Any]]) -> Dict[str, Any]:

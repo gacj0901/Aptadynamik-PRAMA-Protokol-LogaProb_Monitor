@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Monitor</title>
+  <title>Prama ProbLog Monitor</title>
+  <link rel="icon" type="image/png" href="assets/PRAMA_Protokol-Logo.png" />
+  <link rel="apple-touch-icon" href="assets/PRAMA_Protokol-Logo.png" />
   <style>
     :root {
       --bg: #0c0d0f;
@@ -14,11 +16,41 @@
       --muted: #9da3ad;
       --accent: #df5132;
       --good: #77d69b;
+      --scroll-track: #364153;
+      --scroll-thumb: #CAD5E2;
       --sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
       --mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
     }
 
     * { box-sizing: border-box; }
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--scroll-thumb) var(--scroll-track);
+    }
+
+    *::-webkit-scrollbar {
+      width: 12px;
+      height: 12px;
+    }
+
+    *::-webkit-scrollbar-track {
+      background: var(--scroll-track);
+    }
+
+    *::-webkit-scrollbar-thumb {
+      background: var(--scroll-thumb);
+      border: 3px solid var(--scroll-track);
+      border-radius: 999px;
+    }
+
+    *::-webkit-scrollbar-thumb:hover {
+      background: #eef4fb;
+    }
+
+    *::-webkit-scrollbar-button {
+      background: var(--scroll-thumb);
+    }
+
     body {
       margin: 0;
       height: 100vh;
@@ -133,7 +165,7 @@
     aside {
       background: var(--panel);
       display: grid;
-      grid-template-rows: auto auto auto 1fr auto;
+      grid-template-rows: auto auto auto auto 1fr auto;
       min-width: 0;
       height: 100vh;
       overflow: hidden;
@@ -159,7 +191,7 @@
       margin-top: 4px;
     }
 
-    .controls, .metrics, .downloads {
+    .controls, .metrics, .downloads, .prama-live {
       padding: 12px 14px;
       border-bottom: 1px solid var(--border);
     }
@@ -167,17 +199,111 @@
     .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .controls button:nth-child(3) { grid-column: span 2; }
 
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      column-gap: 10px;
+      row-gap: 0;
+      padding-top: 8px;
+      padding-bottom: 8px;
+    }
+
     .metric {
       display: flex;
       justify-content: space-between;
-      gap: 12px;
-      padding: 6px 0;
+      gap: 6px;
+      min-width: 0;
+      padding: 4px 0;
       border-bottom: 1px solid rgba(255,255,255,.06);
-      font: 12px var(--mono);
+      font: 11px var(--mono);
     }
 
-    .metric span:first-child { color: var(--muted); }
-    .metric span:last-child { color: var(--good); }
+    .metric span:first-child {
+      color: var(--muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .metric span:last-child {
+      color: var(--good);
+      flex: 0 0 auto;
+      text-align: right;
+    }
+
+    .prama-live h1 {
+      margin: 0 0 8px;
+      font-size: 15px;
+    }
+
+    .live-note {
+      color: var(--muted);
+      font: 10px/1.35 var(--mono);
+      margin-top: 8px;
+    }
+
+    .viability-head, .collapse-row, .mode-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      font: 11px var(--mono);
+      color: var(--muted);
+      margin: 5px 0;
+    }
+
+    .viability-head span:last-child,
+    .collapse-row span:last-child,
+    .mode-row span:last-child {
+      color: var(--text);
+    }
+
+    .bar {
+      height: 9px;
+      background: #0f1116;
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      width: 0%;
+      height: 100%;
+      background: #77d69b;
+      transition: width .22s ease, background-color .22s ease, opacity .22s ease;
+    }
+
+    .mini-bars {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px 10px;
+      margin-top: 8px;
+    }
+
+    .mini, .mode-gauge {
+      min-width: 0;
+    }
+
+    .mini label, .mode-gauge label {
+      display: flex;
+      justify-content: space-between;
+      font: 10px var(--mono);
+      color: var(--muted);
+      margin-bottom: 3px;
+    }
+
+    .mode-gauges {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .trajectory {
+      margin-top: 8px;
+      border: 1px solid rgba(255,255,255,.07);
+      background: #101217;
+      width: 100%;
+      height: 92px;
+    }
 
     .downloads a {
       display: block;
@@ -232,8 +358,8 @@
   <aside>
     <header class="side-head">
       <div class="side-logo">
-        <img class="brand" src="../png AptadynamiK logo l.png" alt="" />
-        <img class="toolmark" src="../logo prama.png" alt="" />
+        <img class="brand" src="assets/AptadynamiK-Logo.png" alt="" />
+        <img class="toolmark" src="assets/PRAMA_Protokol-Logo.png" alt="" />
       </div>
       <div class="monitor-caption">ProbLog Monitor</div>
     </header>
@@ -256,6 +382,33 @@
       <div class="metric"><span>Entropy range</span><span id="m_range">0.000</span></div>
     </section>
 
+    <section class="prama-live">
+      <h1>PRAMA Live Viability</h1>
+      <div class="sub" id="prama_wait">PRAMA Live: waiting for backend metrics</div>
+      <div class="viability-head"><span>Viability</span><span id="prama_viability">--%</span></div>
+      <div class="bar"><div class="bar-fill" id="viability_fill"></div></div>
+      <div class="collapse-row"><span>COLLAPSED</span><span id="prama_collapsed">NO</span></div>
+      <div class="mode-row"><span>Boundary side</span><span id="prama_boundary">UNRESOLVED</span></div>
+      <div class="mode-row"><span>Status</span><span id="prama_vstatus">UNRESOLVED</span></div>
+
+      <div class="mini-bars">
+        <div class="mini"><label><span>micro</span><span id="v_micro">0.000</span></label><div class="bar"><div class="bar-fill" id="b_micro"></div></div></div>
+        <div class="mini"><label><span>macro</span><span id="v_macro">0.000</span></label><div class="bar"><div class="bar-fill" id="b_macro"></div></div></div>
+        <div class="mini"><label><span>acople</span><span id="v_acople">0.000</span></label><div class="bar"><div class="bar-fill" id="b_acople"></div></div></div>
+        <div class="mini"><label><span>micro_drop</span><span id="v_micro_drop">0.000</span></label><div class="bar"><div class="bar-fill" id="b_micro_drop"></div></div></div>
+      </div>
+
+      <div class="mode-gauges">
+        <div class="mode-gauge"><label><span>RIGIDEZ</span><span id="v_rig">0.000</span></label><div class="bar"><div class="bar-fill" id="b_rig"></div></div></div>
+        <div class="mode-gauge"><label><span>ECO</span><span id="v_eco">0.000</span></label><div class="bar"><div class="bar-fill" id="b_eco"></div></div></div>
+        <div class="mode-gauge"><label><span>ALUCINACIÓN</span><span id="v_alu">0.000</span></label><div class="bar"><div class="bar-fill" id="b_alu"></div></div></div>
+        <div class="mode-gauge"><label><span>TURBACIÓN</span><span id="v_turb">0.000</span></label><div class="bar"><div class="bar-fill" id="b_turb"></div></div></div>
+      </div>
+
+      <svg class="trajectory" id="prama_traj" viewBox="0 0 320 92" preserveAspectRatio="none"></svg>
+      <div class="live-note">Live PRAMA visualization displays generative-structure signals from backend metrics. It does not measure material cost.</div>
+    </section>
+
     <section class="downloads">
       <h1>Document archive</h1>
       <div class="sub" style="margin-bottom: 12px;">Generate results to enable links</div>
@@ -268,6 +421,7 @@
   <script>
     const API = 'http://127.0.0.1:8000';
     let sessionId = null;
+    const pramaSnapshots = [];
     const $ = id => document.getElementById(id);
     const chat = $('chat');
 
@@ -284,6 +438,100 @@
     }
 
     function fmt(value) { return Number(value || 0).toFixed(3); }
+
+    function clamp01(value) {
+      if (value === null || value === undefined || Number.isNaN(Number(value))) return 0;
+      return Math.max(0, Math.min(1, Number(value)));
+    }
+
+    function setBar(id, value, color = '#77d69b') {
+      const fill = $(id);
+      fill.style.width = `${clamp01(value) * 100}%`;
+      fill.style.backgroundColor = color;
+      fill.style.opacity = value === null || value === undefined ? '.35' : '1';
+    }
+
+    function viabilityColor(value, collapsed, threshold = 0.35) {
+      if (collapsed || value <= threshold) return '#5f6876';
+      if (value > 0.65) return '#77d69b';
+      if (value >= 0.35) return '#e6c86e';
+      return '#df5132';
+    }
+
+    function drawTrajectory() {
+      const svg = $('prama_traj');
+      svg.replaceChildren();
+      const keys = [
+        ['viability', '#77d69b'],
+        ['micro', '#CAD5E2'],
+        ['macro', '#7aa7ff'],
+        ['acople', '#77d69b'],
+        ['micro_drop', '#df5132'],
+        ['rig', '#f2a65a'],
+        ['eco', '#b48cff'],
+        ['alu', '#ff6f91'],
+        ['turb', '#60d4d4'],
+      ];
+      const values = pramaSnapshots.slice(-48);
+      if (values.length < 2) return;
+      const width = 320;
+      const height = 92;
+      keys.forEach(([key, color]) => {
+        const points = values.map((item, index) => {
+          const x = (index / Math.max(values.length - 1, 1)) * width;
+          const y = height - clamp01(item[key]) * (height - 8) - 4;
+          return `${x.toFixed(2)},${y.toFixed(2)}`;
+        }).join(' ');
+        const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+        poly.setAttribute('points', points);
+        poly.setAttribute('fill', 'none');
+        poly.setAttribute('stroke', color);
+        poly.setAttribute('stroke-width', key === 'viability' ? '2.6' : '1.4');
+        poly.setAttribute('opacity', key === 'viability' ? '1' : '.72');
+        svg.appendChild(poly);
+      });
+    }
+
+    // This UI does not measure PRAMA signals. It only displays backend-generated PRAMA telemetry.
+    function updatePramaLive(event) {
+      if (!event || (event.type !== 'prama' && event.type !== 'final_prama')) return;
+      const viability = event.viability === null || event.viability === undefined ? null : clamp01(event.viability);
+      const collapsed = Boolean(event.threshold_crossed ?? event.collapsed);
+      const boundary = event.boundary_side || 'UNRESOLVED';
+      const vstatus = event.viability_status || (collapsed ? 'COLLAPSED' : 'UNRESOLVED');
+      const threshold = Number(event.collapse_threshold ?? 0.35);
+      const color = viabilityColor(viability ?? 0, collapsed, threshold);
+      const snapshot = {
+        type: event.type === 'final_prama' ? 'final_prama' : 'prama',
+        turn_index: event.turn_index,
+        window_index: event.window_index,
+        micro: clamp01(event.micro),
+        macro: clamp01(event.macro_health ?? event.macro),
+        acople: clamp01(event.acople),
+        micro_drop: clamp01(event.micro_drop),
+        viability: viability ?? 0,
+        collapsed,
+        boundary_side: boundary,
+        viability_status: vstatus,
+        rig: clamp01(event.rig),
+        eco: clamp01(event.eco),
+        alu: clamp01(event.alu),
+        turb: clamp01(event.turb),
+        timestamp: new Date().toISOString(),
+      };
+      pramaSnapshots.push(snapshot);
+      $('prama_wait').textContent = event.live_mode ? `PRAMA Live: ${event.live_mode}` : 'PRAMA Live: receiving backend metrics';
+      $('prama_viability').textContent = viability === null ? '--%' : `${Math.round(viability * 100)}%`;
+      $('prama_collapsed').textContent = collapsed ? 'YES' : 'NO';
+      $('prama_boundary').textContent = boundary;
+      $('prama_vstatus').textContent = vstatus;
+      setBar('viability_fill', collapsed ? 0 : viability, color);
+      [['micro', '#CAD5E2'], ['macro', '#7aa7ff'], ['acople', '#77d69b'], ['micro_drop', '#df5132'], ['rig', '#f2a65a'], ['eco', '#b48cff'], ['alu', '#ff6f91'], ['turb', '#60d4d4']].forEach(([key, barColor]) => {
+        $(`v_${key}`).textContent = fmt(snapshot[key]);
+        setBar(`b_${key}`, snapshot[key], barColor);
+      });
+      drawTrajectory();
+    }
 
     function updateSummary(summary) {
       $('sessionLine').textContent = summary.session_id ? `Session ${summary.session_id}` : '';
@@ -342,6 +590,7 @@
           if (!line.trim()) continue;
           const event = JSON.parse(line);
           if (event.type === 'chunk') assistantSpan.textContent += event.text;
+          if (event.type === 'prama' || event.type === 'final_prama') updatePramaLive(event);
           if (event.type === 'turn_summary') updateSummary(event.session);
           chat.scrollTop = chat.scrollHeight;
         }
