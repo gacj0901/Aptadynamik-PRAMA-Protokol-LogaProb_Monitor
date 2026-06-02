@@ -23,6 +23,9 @@ TURN_FIELDS = [
     "micro_raw",
     "micro_health",
     "macro_health",
+    "activity_raw",
+    "activity_structural",
+    "activity_effective",
     "activity",
     "micro_drop",
     "micro_excess",
@@ -41,6 +44,7 @@ TURN_FIELDS = [
     "lam",
     "theta",
     "distance_to_threshold",
+    "xi_exceeds_theta",
     "threshold_crossed",
     "viability_status",
     "boundary_pressure",
@@ -79,9 +83,20 @@ def summary_payload(result: Dict[str, Any]) -> Dict[str, Any]:
         "final_distance_to_threshold": result["final_distance_to_threshold"],
         "min_distance_to_threshold": result["min_distance_to_threshold"],
         "threshold_crossed": result["threshold_crossed"],
+        "final_threshold_crossed": result["final_threshold_crossed"],
+        "xi_exceeds_theta": result["xi_exceeds_theta"],
+        "final_xi_exceeds_theta": result["final_xi_exceeds_theta"],
         "final_viability_status": result["viability_status"],
         "final_boundary_side": result["boundary_side"],
         "critical_turns": result["critical_turns"],
+        "regime_label": result["regime_label"],
+        "regime_description": result["regime_description"],
+        "recovery_observed": result["recovery_observed"],
+        "first_crossing_turn": result["first_crossing_turn"],
+        "threshold_crossing_ratio": result["threshold_crossing_ratio"],
+        "persistent_crossing_ratio": result["persistent_crossing_ratio"],
+        "post_crossing_recovery_turns": result["post_crossing_recovery_turns"],
+        "trajectory_assessment": result["trajectory_assessment"],
     }
 
 
@@ -117,6 +132,8 @@ def calibration_sensitivity_payload(turns: Sequence[Dict[str, Any]], windows: Se
                 "final_viability_status": summary["final_viability_status"],
                 "final_boundary_side": summary["final_boundary_side"],
                 "critical_turns": summary["critical_turns"],
+                "regime_label": summary["regime_label"],
+                "trajectory_assessment": summary["trajectory_assessment"],
             }
         )
 
@@ -137,6 +154,8 @@ def calibration_sensitivity_payload(turns: Sequence[Dict[str, Any]], windows: Se
         crossing_stability = "SENSITIVE"
 
     has_near_threshold = any(row["final_viability_status"] == "NEAR_THRESHOLD" for row in per_window)
+    regime_consensus = consensus([row["regime_label"] for row in per_window])
+    trajectory_consensus = consensus([row["trajectory_assessment"] for row in per_window])
     return {
         "substrate_blind": True,
         "material_cost_measured": False,
@@ -153,7 +172,9 @@ def calibration_sensitivity_payload(turns: Sequence[Dict[str, Any]], windows: Se
         "critical_turn_counts": critical_turn_counts,
         "critical_turn_consensus": critical_turn_consensus,
         "crossing_stability": crossing_stability,
-        "trajectory_assessment": trajectory_assessment(crossing_stability, boundary_consensus, has_near_threshold),
+        "regime_label_consensus": regime_consensus,
+        "trajectory_assessment": trajectory_consensus
+        or trajectory_assessment(crossing_stability, boundary_consensus, has_near_threshold),
     }
 
 
@@ -199,6 +220,7 @@ def calibration_sensitivity_report(payload: Dict[str, Any], raw_path: Path) -> s
             f"- critical_turn_consensus: `{payload['critical_turn_consensus']}`",
             f"- crossing_stability: `{payload['crossing_stability']}`",
             f"- trajectory_assessment: `{payload['trajectory_assessment']}`",
+            f"- regime_label_consensus: `{payload['regime_label_consensus']}`",
             "",
             "## Per Window",
             "",
@@ -245,9 +267,23 @@ def report_text(result: Dict[str, Any], raw_path: Path) -> str:
             f"- final_distance_to_threshold: `{summary['final_distance_to_threshold']}`",
             f"- min_distance_to_threshold: `{summary['min_distance_to_threshold']}`",
             f"- threshold_crossed: `{summary['threshold_crossed']}`",
+            f"- final_threshold_crossed: `{summary['final_threshold_crossed']}`",
             f"- final_viability_status: `{summary['final_viability_status']}`",
             f"- final_boundary_side: `{summary['final_boundary_side']}`",
             f"- critical_turns: `{summary['critical_turns']}`",
+            f"- trajectory_assessment: `{summary['trajectory_assessment']}`",
+            "",
+            "## Aptadynamic Regime",
+            "",
+            f"- regime_label: `{summary['regime_label']}`",
+            f"- regime_description: `{summary['regime_description']}`",
+            f"- recovery_observed: `{summary['recovery_observed']}`",
+            f"- first_crossing_turn: `{summary['first_crossing_turn']}`",
+            f"- threshold_crossing_ratio: `{summary['threshold_crossing_ratio']}`",
+            f"- persistent_crossing_ratio: `{summary['persistent_crossing_ratio']}`",
+            f"- post_crossing_recovery_turns: `{summary['post_crossing_recovery_turns']}`",
+            "",
+            "Threshold crossing is interpreted as loss of point-regime viability; terminal collapse requires persistence without recovery.",
             "",
             "## Measurement Scope",
             "",
@@ -297,6 +333,8 @@ def report_text(result: Dict[str, Any], raw_path: Path) -> str:
             f"- collapse_threshold: `{summary['collapse_threshold']}`",
             f"- critical_margin: `{summary['critical_margin']}`",
             f"- threshold_crossed: `{summary['threshold_crossed']}`",
+            f"- xi_exceeds_theta: `{summary['xi_exceeds_theta']}`",
+            f"- final_xi_exceeds_theta: `{summary['final_xi_exceeds_theta']}`",
             "",
             "## Compression Gap",
             "",
@@ -350,8 +388,10 @@ def main() -> int:
     print(f"threshold_crossed: {result['threshold_crossed']}")
     print(f"final_boundary_side: {result['boundary_side']}")
     print(f"final_viability_status: {result['viability_status']}")
+    print(f"regime_label: {result['regime_label']}")
+    print(f"trajectory_assessment: {result['trajectory_assessment']}")
     print(f"crossing_stability: {sensitivity['crossing_stability']}")
-    print(f"trajectory_assessment: {sensitivity['trajectory_assessment']}")
+    print(f"sensitivity_trajectory_assessment: {sensitivity['trajectory_assessment']}")
     return 0
 
 

@@ -33,6 +33,9 @@ class TurnReading:
     micro_raw: Optional[float]
     micro_health: Optional[float]
     macro_health: Optional[float]
+    activity_raw: Optional[float]
+    activity_structural: float
+    activity_effective: float
     activity: float
     acople: Optional[float]
     acople_effective: Optional[float]
@@ -44,6 +47,7 @@ class TurnReading:
     viability_margin: Optional[float]
     compression_gap: Optional[float]
     distance_to_threshold: Optional[float]
+    xi_exceeds_theta: bool
     threshold_crossed: bool
     viability_status: str
     boundary_pressure: Optional[float]
@@ -56,6 +60,17 @@ class TurnReading:
     xi: Optional[float]
     lam: Optional[float]
     theta: Optional[float]
+
+
+@dataclass
+class SessionReading:
+    regime_label: str
+    regime_description: str
+    recovery_observed: bool
+    first_crossing_turn: Optional[int]
+    threshold_crossing_ratio: float
+    persistent_crossing_ratio: float
+    post_crossing_recovery_turns: List[int]
 
 
 def clamp01(value: float) -> float:
@@ -163,10 +178,26 @@ def baseline_from_turns(turns: Sequence[Dict[str, Any]], calib_window: Optional[
     }
 
 
-def activity_from_turn(turn: Dict[str, Any], valid_token_count: int, activity_token_scale: int = 8) -> float:
-    if "activity" in turn:
-        return clamp01(float(turn["activity"]))
-    return clamp01(valid_token_count / max(float(activity_token_scale), 1.0))
+def raw_activity_from_turn(turn: Dict[str, Any]) -> Optional[float]:
+    value = turn.get("activity")
+    if value is None:
+        return None
+    if not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+        return None
+    return clamp01(float(value))
+
+
+def structural_activity(micro_raw: Optional[float], baseline_micro: float) -> float:
+    if micro_raw is None:
+        return 0.0
+    baseline = max(float(baseline_micro), 0.0)
+    return clamp01(float(micro_raw) / (baseline + 1e-3))
+
+
+def effective_activity(activity_raw: Optional[float], activity_structural: float) -> float:
+    if activity_raw is None:
+        return clamp01(activity_structural)
+    return min(clamp01(activity_structural), clamp01(activity_raw))
 
 
 def boundary_pressure_from_margin(viability_margin: Optional[float], critical_margin: float) -> Optional[float]:
@@ -210,6 +241,104 @@ def classify_boundary(
     return winner
 
 
+def classify_regime(turns: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    valid_turns = [turn for turn in turns if turn.get("logprob_valid")]
+    if not valid_turns:
+        return asdict(
+            SessionReading(
+                regime_label="II_ORGANIZED_EQUILIBRIUM",
+                regime_description="no valid formal threshold crossing is available",
+                recovery_observed=False,
+                first_crossing_turn=None,
+                threshold_crossing_ratio=0.0,
+                persistent_crossing_ratio=0.0,
+                post_crossing_recovery_turns=[],
+            )
+        )
+
+    crossing_turns = [turn for turn in valid_turns if turn.get("threshold_crossed")]
+    first_crossing_turn = crossing_turns[0]["turn_index"] if crossing_turns else None
+    threshold_crossing_ratio = len(crossing_turns) / len(valid_turns)
+    final_margin = valid_turns[-1].get("viability_margin")
+    avg_activity_effective = mean(float(turn.get("activity_effective") or 0.0) for turn in valid_turns)
+    avg_acople_raw = mean(float(turn.get("acople") or 0.0) for turn in valid_turns)
+
+    if first_crossing_turn is None:
+        if len(valid_turns) >= 3 and avg_activity_effective < 0.05 and avg_acople_raw < 0.25:
+            return asdict(
+                SessionReading(
+                    regime_label="I_SUBCRITICAL_DISSOLUTION",
+                    regime_description="persistent low structural activity and low raw acople without formal over-threshold oscillation",
+                    recovery_observed=False,
+                    first_crossing_turn=None,
+                    threshold_crossing_ratio=threshold_crossing_ratio,
+                    persistent_crossing_ratio=0.0,
+                    post_crossing_recovery_turns=[],
+                )
+            )
+        return asdict(
+            SessionReading(
+                regime_label="II_ORGANIZED_EQUILIBRIUM",
+                regime_description="no formal threshold crossing; point-regime viability is conserved",
+                recovery_observed=False,
+                first_crossing_turn=None,
+                threshold_crossing_ratio=threshold_crossing_ratio,
+                persistent_crossing_ratio=0.0,
+                post_crossing_recovery_turns=[],
+            )
+        )
+
+    post_crossing = [turn for turn in valid_turns if turn["turn_index"] >= first_crossing_turn]
+    post_recovery = [
+        turn
+        for turn in valid_turns
+        if turn["turn_index"] > first_crossing_turn
+        and not bool(turn.get("xi_exceeds_theta"))
+        and (turn.get("viability_margin") is not None and float(turn["viability_margin"]) > 0.0)
+    ]
+    post_crossing_recovery_turns = [int(turn["turn_index"]) for turn in post_recovery]
+    recovery_observed = bool(post_crossing_recovery_turns)
+    persistent_crossing_ratio = (
+        sum(1 for turn in post_crossing if turn.get("threshold_crossed")) / len(post_crossing)
+        if post_crossing
+        else 0.0
+    )
+
+    if recovery_observed:
+        label = "III_STRUCTURAL_PULSATION"
+        description = "threshold crossing followed by recovery; trajectory operates as bounded structural pulsation"
+    elif persistent_crossing_ratio >= 0.80 and final_margin is not None and float(final_margin) < 0.0:
+        label = "IV_ENTROPIC_COLLAPSE"
+        description = "persistent threshold crossing without observed recovery; terminal drift is operationally indicated"
+    else:
+        label = "III_STRUCTURAL_PULSATION"
+        description = "threshold crossing without confirmed terminal collapse"
+
+    return asdict(
+        SessionReading(
+            regime_label=label,
+            regime_description=description,
+            recovery_observed=recovery_observed,
+            first_crossing_turn=int(first_crossing_turn),
+            threshold_crossing_ratio=threshold_crossing_ratio,
+            persistent_crossing_ratio=persistent_crossing_ratio,
+            post_crossing_recovery_turns=post_crossing_recovery_turns,
+        )
+    )
+
+
+def trajectory_assessment_from_regime(regime_label: str) -> str:
+    if regime_label == "III_STRUCTURAL_PULSATION":
+        return "THRESHOLD_CROSSED_STRUCTURAL_PULSATION"
+    if regime_label == "IV_ENTROPIC_COLLAPSE":
+        return "ENTROPIC_COLLAPSE"
+    if regime_label == "II_ORGANIZED_EQUILIBRIUM":
+        return "VIABLE_ORGANIZED_EQUILIBRIUM"
+    if regime_label == "I_SUBCRITICAL_DISSOLUTION":
+        return "SUBCRITICAL_DISSOLUTION"
+    return "UNRESOLVED_APTADYNAMIC_REGIME"
+
+
 def measure(
     turns: Sequence[Dict[str, Any]],
     calib_window: Optional[int] = None,
@@ -227,16 +356,19 @@ def measure(
     xi_accumulated = 0.0
 
     for idx, turn in enumerate(turns):
+        turn_index = int(turn.get("turn_index", idx))
         extracted = extract_turn_logprobs_with_counts(turn)
         logprobs = extracted["logprobs"]
         valid_token_count = extracted["valid_token_count"]
         invalid_token_count = extracted["invalid_token_count"]
-        activity = activity_from_turn(turn, valid_token_count)
+        activity_raw = raw_activity_from_turn(turn)
         if valid_token_count < 2:
+            activity_structural = 0.0
+            activity_effective = effective_activity(activity_raw, activity_structural)
             rows.append(
                 asdict(
                     TurnReading(
-                        turn_index=int(turn.get("turn_index", idx)),
+                        turn_index=turn_index,
                         valid_token_count=valid_token_count,
                         invalid_token_count=invalid_token_count,
                         logprob_valid=False,
@@ -244,7 +376,10 @@ def measure(
                         micro_raw=None,
                         micro_health=None,
                         macro_health=None,
-                        activity=activity,
+                        activity_raw=activity_raw,
+                        activity_structural=activity_structural,
+                        activity_effective=activity_effective,
+                        activity=activity_effective,
                         acople=None,
                         acople_effective=None,
                         delta_instant=None,
@@ -255,6 +390,7 @@ def measure(
                         viability_margin=None,
                         compression_gap=None,
                         distance_to_threshold=None,
+                        xi_exceeds_theta=False,
                         threshold_crossed=False,
                         viability_status="UNRESOLVED",
                         boundary_pressure=None,
@@ -277,14 +413,20 @@ def measure(
         micro_health_value = centered_health(micro_raw, baseline_micro)
         macro_health = macro_continuity(previous_mean, mean_surprise)
         acople_raw = min(micro_health_value, macro_health)
-        delta_instant = (1.0 - acople_raw) * activity
+        activity_structural = structural_activity(micro_raw, baseline_micro)
+        activity_effective = effective_activity(activity_raw, activity_structural)
+        delta_instant = (1.0 - acople_raw) * activity_effective
         acople_effective = 1.0 - delta_instant
         xi_accumulated = (float(memory_beta) * xi_accumulated) + delta_instant
         xi_norm = xi_accumulated / (1.0 + xi_accumulated)
         lambda_remaining = clamp01(lambda0 * (1.0 - xi_norm))
         theta_dynamic = float(theta0) * lambda_remaining
         viability_margin = theta_dynamic - xi_norm
+        xi_exceeds_theta = xi_norm >= theta_dynamic
+        threshold_crossed = idx > 0 and xi_exceeds_theta
         status = viability_status(viability_margin, critical_margin)
+        if idx == 0 and status == "THRESHOLD_CROSSED":
+            status = "NEAR_THRESHOLD"
         boundary_pressure = boundary_pressure_from_margin(viability_margin, critical_margin)
         drop = micro_drop(micro_raw, baseline_micro)
         excess = micro_excess(micro_raw, baseline_micro)
@@ -297,11 +439,10 @@ def measure(
             side_threshold=side_threshold,
             side_margin=side_margin,
         )
-        threshold_crossed = viability_margin <= 0.0
         rows.append(
             asdict(
                 TurnReading(
-                    turn_index=int(turn.get("turn_index", idx)),
+                    turn_index=turn_index,
                     valid_token_count=valid_token_count,
                     invalid_token_count=invalid_token_count,
                     logprob_valid=True,
@@ -309,7 +450,10 @@ def measure(
                     micro_raw=micro_raw,
                     micro_health=micro_health_value,
                     macro_health=macro_health,
-                    activity=activity,
+                    activity_raw=activity_raw,
+                    activity_structural=activity_structural,
+                    activity_effective=activity_effective,
+                    activity=activity_effective,
                     acople=acople_raw,
                     acople_effective=acople_effective,
                     delta_instant=delta_instant,
@@ -320,6 +464,7 @@ def measure(
                     viability_margin=viability_margin,
                     compression_gap=None,
                     distance_to_threshold=viability_margin,
+                    xi_exceeds_theta=xi_exceeds_theta,
                     threshold_crossed=threshold_crossed,
                     viability_status=status,
                     boundary_pressure=boundary_pressure,
@@ -342,8 +487,13 @@ def measure(
     critical_turns = [
         row["turn_index"]
         for row in valid_rows
-        if row.get("viability_status") in {"THRESHOLD_CROSSED", "NEAR_THRESHOLD"}
+        if row.get("turn_index") != 0 and row.get("viability_status") in {"THRESHOLD_CROSSED", "NEAR_THRESHOLD"}
     ]
+    regime = classify_regime(rows)
+    trajectory_threshold_crossed = any(row.get("threshold_crossed") for row in valid_rows)
+    trajectory_xi_exceeds_theta = any(
+        row.get("xi_exceeds_theta") and row.get("turn_index") != 0 for row in valid_rows
+    )
     return {
         "substrate_blind": True,
         "material_cost_measured": False,
@@ -364,11 +514,22 @@ def measure(
         "min_viability": min(margins) if margins else None,
         "final_distance_to_threshold": final.get("viability_margin"),
         "min_distance_to_threshold": min(margins) if margins else None,
-        "threshold_crossed": bool(final.get("threshold_crossed", False)),
+        "threshold_crossed": trajectory_threshold_crossed,
+        "final_threshold_crossed": bool(final.get("threshold_crossed", False)),
+        "xi_exceeds_theta": trajectory_xi_exceeds_theta,
+        "final_xi_exceeds_theta": bool(final.get("xi_exceeds_theta", False)),
         "boundary_side": final.get("boundary_side"),
         "boundary_pressure": final.get("boundary_pressure"),
         "viability_status": final.get("viability_status", "UNRESOLVED"),
         "critical_turns": critical_turns,
+        "regime_label": regime["regime_label"],
+        "regime_description": regime["regime_description"],
+        "recovery_observed": regime["recovery_observed"],
+        "first_crossing_turn": regime["first_crossing_turn"],
+        "threshold_crossing_ratio": regime["threshold_crossing_ratio"],
+        "persistent_crossing_ratio": regime["persistent_crossing_ratio"],
+        "post_crossing_recovery_turns": regime["post_crossing_recovery_turns"],
+        "trajectory_assessment": trajectory_assessment_from_regime(regime["regime_label"]),
         "turns": rows,
         "notes": {
             "scope": SUBSTRATE_BLIND_WARNING,
@@ -382,6 +543,11 @@ def measure(
                 "acople = acople_raw; acople_effective is the effective decoupling incorporated "
                 "into accumulated Xi. Low-activity ACKs may have low acople_raw and high "
                 "acople_effective without contradiction."
+            ),
+            "activity": (
+                "activity_raw records any incoming activity field. activity_structural is derived "
+                "from micro_raw relative to baseline_micro. activity_effective is the structural "
+                "activity used by delta_instant and never exceeds activity_structural."
             ),
         },
     }

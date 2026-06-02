@@ -52,6 +52,9 @@ class TestPramaComponents(unittest.TestCase):
             "micro_raw",
             "micro_health",
             "macro_health",
+            "activity_raw",
+            "activity_structural",
+            "activity_effective",
             "activity",
             "micro_drop",
             "micro_excess",
@@ -70,6 +73,7 @@ class TestPramaComponents(unittest.TestCase):
             "lam",
             "theta",
             "distance_to_threshold",
+            "xi_exceeds_theta",
             "threshold_crossed",
             "viability_status",
             "boundary_pressure",
@@ -84,15 +88,17 @@ class TestPramaComponents(unittest.TestCase):
         row = result["turns"][-1]
 
         self.assertAlmostEqual(row["acople"], min(row["micro_health"], row["macro_health"]))
-        self.assertAlmostEqual(row["delta_instant"], (1.0 - row["acople"]) * row["activity"])
+        self.assertAlmostEqual(row["delta_instant"], (1.0 - row["acople"]) * row["activity_effective"])
         self.assertAlmostEqual(row["acople_effective"], 1.0 - row["delta_instant"])
+        self.assertAlmostEqual(row["activity"], row["activity_effective"])
+        self.assertLessEqual(row["activity"], row["activity_structural"])
         self.assertAlmostEqual(row["viability"], row["viability_margin"])
         self.assertAlmostEqual(row["delta"], row["delta_instant"])
         self.assertAlmostEqual(row["xi"], row["xi_accumulated"])
         self.assertAlmostEqual(row["lam"], row["lambda_remaining"])
         self.assertAlmostEqual(row["theta"], row["theta_dynamic"])
         self.assertAlmostEqual(row["distance_to_threshold"], row["viability_margin"])
-        self.assertEqual(row["threshold_crossed"], row["viability_margin"] <= 0.0)
+        self.assertEqual(row["threshold_crossed"], row["xi_exceeds_theta"])
 
     def test_viable_status_values(self):
         viable = measure(
@@ -200,10 +206,160 @@ class TestPramaComponents(unittest.TestCase):
         self.assertAlmostEqual(row["xi_accumulated"], 0.0)
         self.assertAlmostEqual(row["acople_effective"], 1.0)
 
+    def test_ack_raw_activity_does_not_inject_structural_delta(self):
+        raw_turns = [
+            {
+                "turn_index": 0,
+                "activity": 0.625,
+                "tokens": [{"top1_logprob": -0.5}, {"top1_logprob": -0.5}],
+            },
+            {
+                "turn_index": 1,
+                "activity": 1.0,
+                "tokens": [{"top1_logprob": -0.4}, {"top1_logprob": -0.8}],
+            },
+        ]
+        result = measure(raw_turns, calib_window=2)
+        row = result["turns"][0]
+
+        self.assertAlmostEqual(row["micro_raw"], 0.0)
+        self.assertAlmostEqual(row["activity_raw"], 0.625)
+        self.assertAlmostEqual(row["activity_structural"], 0.0)
+        self.assertAlmostEqual(row["activity_effective"], 0.0)
+        self.assertAlmostEqual(row["activity"], row["activity_effective"])
+        self.assertAlmostEqual(row["delta_instant"], 0.0)
+        self.assertAlmostEqual(row["acople_effective"], 1.0)
+        self.assertFalse(row["threshold_crossed"])
+        self.assertNotIn(0, result["critical_turns"])
+        self.assertNotEqual(result["first_crossing_turn"], 0)
+
+    def test_activity_never_exceeds_structural_activity(self):
+        row = measure(
+            [
+                {
+                    "turn_index": 0,
+                    "activity": 0.9,
+                    "tokens": [{"top1_logprob": -0.2}, {"top1_logprob": -0.3}],
+                }
+            ],
+            calib_window=1,
+        )["turns"][0]
+
+        self.assertLessEqual(row["activity"], row["activity_structural"])
+        self.assertLessEqual(row["activity_effective"], row["activity_structural"])
+
+    def test_critical_turns_exclude_zero(self):
+        result = measure(
+            [
+                {
+                    "turn_index": 0,
+                    "activity": 1.0,
+                    "tokens": [{"top1_logprob": -0.5}, {"top1_logprob": -0.5}],
+                }
+            ],
+            calib_window=1,
+            theta0=0.01,
+        )
+
+        self.assertFalse(result["turns"][0]["threshold_crossed"])
+        self.assertNotIn(0, result["critical_turns"])
+        self.assertIsNone(result["first_crossing_turn"])
+
     def test_compression_gap_is_none(self):
         row = measure([turn(0, [-0.2, -0.4]), turn(1, [-0.25, -0.45])], calib_window=1)["turns"][0]
 
         self.assertIsNone(row["compression_gap"])
+
+    def test_organized_equilibrium_without_crossing(self):
+        result = measure(
+            [
+                turn(0, [-0.75, -1.25]),
+                turn(1, [-0.76, -1.24]),
+                turn(2, [-0.74, -1.26]),
+            ],
+            calib_window=1,
+        )
+
+        self.assertEqual(result["regime_label"], "II_ORGANIZED_EQUILIBRIUM")
+        self.assertEqual(result["trajectory_assessment"], "VIABLE_ORGANIZED_EQUILIBRIUM")
+        self.assertFalse(result["threshold_crossed"])
+        self.assertFalse(result["recovery_observed"])
+        self.assertIsNone(result["first_crossing_turn"])
+
+    def test_crossing_with_recovery_is_structural_pulsation(self):
+        result = measure(
+            [
+                turn(0, [-0.8, -1.2]),
+                turn(1, [-0.1, -2.1]),
+                turn(2, [-0.8, -1.2]),
+                turn(3, [-0.8, -1.2]),
+                turn(4, [-0.8, -1.2]),
+                turn(5, [-0.8, -1.2]),
+            ],
+            calib_window=1,
+        )
+
+        self.assertEqual(result["regime_label"], "III_STRUCTURAL_PULSATION")
+        self.assertEqual(result["trajectory_assessment"], "THRESHOLD_CROSSED_STRUCTURAL_PULSATION")
+        self.assertTrue(result["threshold_crossed"])
+        self.assertTrue(result["recovery_observed"])
+        self.assertIsNotNone(result["first_crossing_turn"])
+        self.assertTrue(result["post_crossing_recovery_turns"])
+
+    def test_persistent_crossing_is_entropic_collapse(self):
+        result = measure(
+            [
+                turn(0, [-0.8, -1.2]),
+                turn(1, [-0.1, -2.1]),
+                turn(2, [-0.1, -2.1]),
+                turn(3, [-0.1, -2.1]),
+                turn(4, [-0.1, -2.1]),
+                turn(5, [-0.1, -2.1]),
+            ],
+            calib_window=1,
+        )
+
+        self.assertEqual(result["regime_label"], "IV_ENTROPIC_COLLAPSE")
+        self.assertEqual(result["trajectory_assessment"], "ENTROPIC_COLLAPSE")
+        self.assertFalse(result["recovery_observed"])
+        self.assertGreaterEqual(result["persistent_crossing_ratio"], 0.80)
+        self.assertLess(result["final_viability"], 0.0)
+
+    def test_low_activity_low_raw_acople_can_be_subcritical_dissolution(self):
+        low_activity_turns = [
+            {
+                "turn_index": 0,
+                "activity": 0.0,
+                "tokens": [{"top1_logprob": -0.5}, {"top1_logprob": -1.5}],
+            },
+            {
+                "turn_index": 1,
+                "activity": 0.0,
+                "tokens": [{"top1_logprob": -0.5}, {"top1_logprob": -0.5}],
+            },
+            {
+                "turn_index": 2,
+                "activity": 0.0,
+                "tokens": [{"top1_logprob": -0.5}, {"top1_logprob": -0.5}],
+            },
+            {
+                "turn_index": 3,
+                "activity": 0.0,
+                "tokens": [{"top1_logprob": -0.5}, {"top1_logprob": -0.5}],
+            },
+            {
+                "turn_index": 4,
+                "activity": 0.0,
+                "tokens": [{"top1_logprob": -0.5}, {"top1_logprob": -0.5}],
+            },
+        ]
+        result = measure(low_activity_turns, calib_window=1)
+
+        self.assertEqual(result["regime_label"], "I_SUBCRITICAL_DISSOLUTION")
+        self.assertEqual(result["trajectory_assessment"], "SUBCRITICAL_DISSOLUTION")
+        self.assertFalse(result["threshold_crossed"])
+        self.assertFalse(result["xi_exceeds_theta"])
+        self.assertIsNone(result["first_crossing_turn"])
 
     def test_collapse_xi_norm_uses_general_formula(self):
         theta0 = 0.35
