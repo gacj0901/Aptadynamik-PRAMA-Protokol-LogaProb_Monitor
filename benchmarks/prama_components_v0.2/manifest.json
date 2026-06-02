@@ -1,0 +1,13 @@
+{
+  "benchmark": "prama_components_v0.2",
+  "description": "Benchmark cases for PRAMA Components dynamic coupling viability.",
+  "cases": [
+    {
+      "case_id": "control_frictional_goldstein_20260602",
+      "condition": "control",
+      "control_type": "frictional_control",
+      "path": "benchmarks/prama_components_v0.2/cases/control_frictional_goldstein_20260602.json",
+      "source_session": "results/session_20260602-0100h_gpt-4o-mini"
+    }
+  ]
+}
