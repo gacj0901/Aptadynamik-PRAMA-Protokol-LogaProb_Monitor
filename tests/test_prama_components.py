@@ -6,7 +6,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from aptadynamik.observer.prama_components import SUBSTRATE_BLIND_WARNING, measure
+from aptadynamik.prama_components import (
+    SUBSTRATE_BLIND_WARNING,
+    centered_health,
+    collapse_xi_norm,
+    measure,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,10 +52,23 @@ class TestPramaComponents(unittest.TestCase):
             "micro_raw",
             "micro_health",
             "macro_health",
+            "activity",
             "micro_drop",
             "micro_excess",
             "acople",
+            "acople_effective",
+            "delta_instant",
+            "xi_accumulated",
+            "xi_norm",
+            "lambda_remaining",
+            "theta_dynamic",
+            "viability_margin",
+            "compression_gap",
             "viability",
+            "delta",
+            "xi",
+            "lam",
+            "theta",
             "distance_to_threshold",
             "threshold_crossed",
             "viability_status",
@@ -61,32 +79,37 @@ class TestPramaComponents(unittest.TestCase):
         self.assertTrue(required.issubset(row.keys()))
         self.assertTrue(forbidden_names().isdisjoint(row.keys()))
 
-    def test_acople_and_threshold_definitions(self):
+    def test_acople_effective_and_alias_definitions(self):
         result = measure([turn(0, [-0.75, -1.25]), turn(1, [-0.4, -1.6])], calib_window=1)
         row = result["turns"][-1]
 
         self.assertAlmostEqual(row["acople"], min(row["micro_health"], row["macro_health"]))
-        self.assertAlmostEqual(row["viability"], row["acople"])
-        self.assertAlmostEqual(row["distance_to_threshold"], row["viability"] - result["collapse_threshold"])
-        self.assertEqual(row["threshold_crossed"], row["viability"] <= result["collapse_threshold"])
+        self.assertAlmostEqual(row["delta_instant"], (1.0 - row["acople"]) * row["activity"])
+        self.assertAlmostEqual(row["acople_effective"], 1.0 - row["delta_instant"])
+        self.assertAlmostEqual(row["viability"], row["viability_margin"])
+        self.assertAlmostEqual(row["delta"], row["delta_instant"])
+        self.assertAlmostEqual(row["xi"], row["xi_accumulated"])
+        self.assertAlmostEqual(row["lam"], row["lambda_remaining"])
+        self.assertAlmostEqual(row["theta"], row["theta_dynamic"])
+        self.assertAlmostEqual(row["distance_to_threshold"], row["viability_margin"])
+        self.assertEqual(row["threshold_crossed"], row["viability_margin"] <= 0.0)
 
     def test_viable_status_values(self):
         viable = measure(
             [turn(0, [-0.75, -1.25]), turn(1, [-0.72, -1.22])],
             calib_window=1,
-            collapse_threshold=0.35,
             critical_margin=0.05,
         )["turns"][-1]
         near = measure(
-            [turn(0, [-0.75, -1.25]), turn(1, [-0.9, -1.1])],
+            [turn(0, [-0.75, -1.25]), turn(1, [-0.75, -1.25]), turn(2, [-0.95, -1.05])],
             calib_window=1,
-            collapse_threshold=0.35,
+            theta0=0.20,
             critical_margin=0.10,
         )["turns"][-1]
         crossed = measure(
             [turn(0, [-0.75, -1.25]), turn(1, [-0.4, -1.6])],
             calib_window=1,
-            collapse_threshold=0.35,
+            theta0=0.05,
             critical_margin=0.05,
         )["turns"][-1]
 
@@ -107,7 +130,7 @@ class TestPramaComponents(unittest.TestCase):
         result = measure(
             [turn(0, [-0.75, -1.25]), turn(1, [-0.9, -1.1])],
             calib_window=1,
-            collapse_threshold=0.35,
+            theta0=0.20,
             critical_margin=0.10,
         )
         row = result["turns"][-1]
@@ -115,7 +138,7 @@ class TestPramaComponents(unittest.TestCase):
             0.0,
             min(
                 1.0,
-                1.0 - ((row["viability"] - result["collapse_threshold"]) / result["critical_margin"]),
+                1.0 - (row["viability_margin"] / result["critical_margin"]),
             ),
         )
 
@@ -157,6 +180,48 @@ class TestPramaComponents(unittest.TestCase):
         self.assertTrue(result["substrate_blind"])
         self.assertFalse(result["material_cost_measured"])
         self.assertTrue(result["requires_exogenous_telemetry_for_material_cost"])
+
+    def test_ack_low_activity_uses_effective_acople(self):
+        raw_turns = [
+            {
+                "turn_index": 0,
+                "activity": 1.0,
+                "tokens": [{"top1_logprob": -0.8}, {"top1_logprob": -1.2}],
+            },
+            {
+                "turn_index": 1,
+                "activity": 0.0,
+                "tokens": [{"top1_logprob": -0.1}, {"top1_logprob": -2.0}],
+            },
+        ]
+        row = measure(raw_turns, calib_window=1)["turns"][-1]
+
+        self.assertAlmostEqual(row["delta_instant"], 0.0)
+        self.assertAlmostEqual(row["xi_accumulated"], 0.0)
+        self.assertAlmostEqual(row["acople_effective"], 1.0)
+
+    def test_compression_gap_is_none(self):
+        row = measure([turn(0, [-0.2, -0.4]), turn(1, [-0.25, -0.45])], calib_window=1)["turns"][0]
+
+        self.assertIsNone(row["compression_gap"])
+
+    def test_collapse_xi_norm_uses_general_formula(self):
+        theta0 = 0.35
+        lambda0 = 0.5
+        expected = (theta0 * lambda0) / (1.0 + theta0 * lambda0)
+
+        self.assertAlmostEqual(collapse_xi_norm(theta0, lambda0), expected)
+        self.assertAlmostEqual(collapse_xi_norm(theta0, 1.0), theta0 / (1.0 + theta0))
+
+    def test_centered_health_penalizes_low_and_high_micro(self):
+        baseline = 1.0
+        centered = centered_health(1.0, baseline)
+        low = centered_health(0.2, baseline)
+        high = centered_health(1.8, baseline)
+
+        self.assertGreater(centered, low)
+        self.assertGreater(centered, high)
+        self.assertAlmostEqual(centered, 1.0)
 
     def test_runner_outputs_canonical_artifacts(self):
         raw = {"session_id": "components", "turns": [turn(0, [-0.75, -1.25]), turn(1, [-0.4, -1.6])]}
