@@ -28,3 +28,5 @@ secrets.json
 # Generated PRAMA outputs
 results/*
 !results/.gitkeep
+
+results/*.json
