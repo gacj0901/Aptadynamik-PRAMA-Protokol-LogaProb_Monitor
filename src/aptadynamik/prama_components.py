@@ -22,6 +22,10 @@ ECHO_NOTE = (
     "coherence is not mere regularity; it is structural persistence under flow."
 )
 
+DEFAULT_THETA0 = 0.35
+DEFAULT_LAMBDA0 = 1.0
+DEFAULT_MEMORY_BETA = 0.65
+
 
 @dataclass
 class TurnReading:
@@ -342,9 +346,9 @@ def trajectory_assessment_from_regime(regime_label: str) -> str:
 def measure(
     turns: Sequence[Dict[str, Any]],
     calib_window: Optional[int] = None,
-    theta0: float = 0.35,
-    lambda0: float = 1.0,
-    memory_beta: float = 0.65,
+    theta0: float = DEFAULT_THETA0,
+    lambda0: float = DEFAULT_LAMBDA0,
+    memory_beta: float = DEFAULT_MEMORY_BETA,
     critical_margin: float = 0.05,
     side_threshold: float = 0.05,
     side_margin: float = 0.03,
@@ -504,6 +508,7 @@ def measure(
         "baseline_warning": baseline["baseline_warning"],
         "theta0": theta0,
         "lambda0": lambda0,
+        "memory_beta": memory_beta,
         "collapse_threshold": collapse_xi_norm(theta0, lambda0),
         "critical_margin": critical_margin,
         "valid_turns": len(valid_rows),

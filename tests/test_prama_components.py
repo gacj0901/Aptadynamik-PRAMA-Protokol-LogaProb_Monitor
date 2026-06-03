@@ -473,6 +473,119 @@ class TestPramaComponents(unittest.TestCase):
             self.assertNotIn(forbidden, sensitivity_md)
             self.assertNotIn(forbidden, json.dumps(sensitivity_json))
 
+    def test_runner_accepts_dynamic_parameter_arguments(self):
+        args = RUNNER.build_parser().parse_args(
+            [
+                "--from-raw",
+                "raw.json",
+                "--output-dir",
+                "out",
+                "--theta0",
+                "0.5",
+                "--lambda0",
+                "0.8",
+                "--memory-beta",
+                "0.4",
+                "--delta-ref",
+                "1.0",
+                "--theta0-grid",
+                "0.35",
+                "0.5",
+                "--lambda0-grid",
+                "1.0",
+                "--memory-beta-grid",
+                "0.3",
+                "0.7",
+            ]
+        )
+
+        self.assertAlmostEqual(args.theta0, 0.5)
+        self.assertAlmostEqual(args.lambda0, 0.8)
+        self.assertAlmostEqual(args.memory_beta, 0.4)
+        self.assertAlmostEqual(args.delta_ref, 1.0)
+        self.assertEqual(args.theta0_grid, [0.35, 0.5])
+        self.assertEqual(args.lambda0_grid, [1.0])
+        self.assertEqual(args.memory_beta_grid, [0.3, 0.7])
+
+    def test_parametric_sensitivity_minimal_two_theta0(self):
+        raw = {
+            "session_id": "components",
+            "turns": [
+                turn(0, [-0.75, -1.25]),
+                turn(1, [-0.4, -1.6]),
+                turn(2, [-0.75, -1.25]),
+                turn(3, [-0.75, -1.25]),
+            ],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            raw_path = tmp_path / "raw.json"
+            out_dir = tmp_path / "out"
+            raw_path.write_text(json.dumps(raw), encoding="utf-8")
+
+            payload = RUNNER.run_parametric_sensitivity(
+                raw_path,
+                out_dir,
+                calib_window=1,
+                theta0_grid=[0.35, 0.5],
+                lambda0_grid=[1.0],
+                memory_beta_grid=[0.3],
+            )
+            sensitivity_json = json.loads((out_dir / "components_parametric_sensitivity.json").read_text(encoding="utf-8"))
+            sensitivity_md = (out_dir / "components_parametric_sensitivity.md").read_text(encoding="utf-8")
+
+        self.assertEqual(len(payload["runs"]), 2)
+        self.assertEqual(len(sensitivity_json["runs"]), 2)
+        for row in sensitivity_json["runs"]:
+            self.assertIn("regime_label", row)
+            self.assertIn("trajectory_assessment", row)
+            self.assertIn("threshold_crossing_ratio", row)
+            self.assertIn("persistent_crossing_ratio", row)
+        self.assertIn("regime_label_counts", sensitivity_json)
+        self.assertIn("trajectory_assessment_counts", sensitivity_json)
+        self.assertIn("robust_regime_label", sensitivity_json)
+        self.assertIn("robust_trajectory_assessment", sensitivity_json)
+        self.assertIn("Parametric Sensitivity", sensitivity_md)
+
+    def test_runner_report_mentions_parametric_sensitivity_when_requested(self):
+        raw = {
+            "session_id": "components",
+            "turns": [turn(0, [-0.75, -1.25]), turn(1, [-0.4, -1.6]), turn(2, [-0.75, -1.25])],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            raw_path = tmp_path / "raw.json"
+            out_dir = tmp_path / "out"
+            raw_path.write_text(json.dumps(raw), encoding="utf-8")
+
+            parametric = RUNNER.run_parametric_sensitivity(
+                raw_path,
+                out_dir,
+                calib_window=1,
+                theta0_grid=[0.35, 0.5],
+                lambda0_grid=[1.0],
+                memory_beta_grid=[0.3],
+            )
+            RUNNER.run_from_raw(
+                raw_path,
+                out_dir,
+                calib_window=1,
+                theta0=0.5,
+                lambda0=1.0,
+                memory_beta=0.3,
+                delta_ref=2.0,
+                parametric_payload=parametric,
+            )
+            summary = json.loads((out_dir / "components_summary.json").read_text(encoding="utf-8"))
+            report = (out_dir / "components_report.md").read_text(encoding="utf-8")
+
+        self.assertAlmostEqual(summary["theta0"], 0.5)
+        self.assertAlmostEqual(summary["lambda0"], 1.0)
+        self.assertAlmostEqual(summary["memory_beta"], 0.3)
+        self.assertAlmostEqual(summary["delta_ref"], 2.0)
+        self.assertIn("components_parametric_sensitivity.json", report)
+        self.assertIn("robust_regime_label", report)
+
 
 if __name__ == "__main__":
     unittest.main()
