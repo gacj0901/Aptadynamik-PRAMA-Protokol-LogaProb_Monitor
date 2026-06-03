@@ -30,3 +30,5 @@ results/*
 !results/.gitkeep
 
 results/*.json
+
+results/*.json
