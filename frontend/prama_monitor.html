@@ -390,6 +390,10 @@
       <div class="collapse-row"><span>COLLAPSED</span><span id="prama_collapsed">NO</span></div>
       <div class="mode-row"><span>Boundary side</span><span id="prama_boundary">UNRESOLVED</span></div>
       <div class="mode-row"><span>Status</span><span id="prama_vstatus">UNRESOLVED</span></div>
+      <div class="mode-row"><span>Regime</span><span id="prama_regime">UNRESOLVED</span></div>
+      <div class="mode-row"><span>Assessment</span><span id="prama_assessment">UNRESOLVED</span></div>
+      <div class="mode-row"><span>First crossing</span><span id="prama_first_crossing">--</span></div>
+      <div class="mode-row"><span>Recovery</span><span id="prama_recovery">--</span></div>
 
       <div class="mini-bars">
         <div class="mini"><label><span>micro</span><span id="v_micro">0.000</span></label><div class="bar"><div class="bar-fill" id="b_micro"></div></div></div>
@@ -513,6 +517,10 @@
         collapsed,
         boundary_side: boundary,
         viability_status: vstatus,
+        regime_label: event.regime_label || null,
+        trajectory_assessment: event.trajectory_assessment || null,
+        first_crossing_turn: event.first_crossing_turn ?? null,
+        recovery_observed: event.recovery_observed ?? null,
         rig: clamp01(event.rig),
         eco: clamp01(event.eco),
         alu: clamp01(event.alu),
@@ -525,6 +533,10 @@
       $('prama_collapsed').textContent = collapsed ? 'YES' : 'NO';
       $('prama_boundary').textContent = boundary;
       $('prama_vstatus').textContent = vstatus;
+      $('prama_regime').textContent = snapshot.regime_label || 'UNRESOLVED';
+      $('prama_assessment').textContent = snapshot.trajectory_assessment || 'UNRESOLVED';
+      $('prama_first_crossing').textContent = snapshot.first_crossing_turn === null ? '--' : snapshot.first_crossing_turn;
+      $('prama_recovery').textContent = snapshot.recovery_observed === null ? '--' : (snapshot.recovery_observed ? 'YES' : 'NO');
       setBar('viability_fill', collapsed ? 0 : viability, color);
       [['micro', '#CAD5E2'], ['macro', '#7aa7ff'], ['acople', '#77d69b'], ['micro_drop', '#df5132'], ['rig', '#f2a65a'], ['eco', '#b48cff'], ['alu', '#ff6f91'], ['turb', '#60d4d4']].forEach(([key, barColor]) => {
         $(`v_${key}`).textContent = fmt(snapshot[key]);
@@ -544,6 +556,10 @@
       $('m_rigidity').textContent = fmt(summary.avg_rigidity);
       $('m_uncertainty').textContent = fmt(summary.avg_uncertainty);
       $('m_range').textContent = fmt(summary.max_entropy_range);
+      if (summary.regime_label !== undefined) $('prama_regime').textContent = summary.regime_label || 'UNRESOLVED';
+      if (summary.trajectory_assessment !== undefined) $('prama_assessment').textContent = summary.trajectory_assessment || 'UNRESOLVED';
+      if (summary.first_crossing_turn !== undefined) $('prama_first_crossing').textContent = summary.first_crossing_turn === null ? '--' : summary.first_crossing_turn;
+      if (summary.recovery_observed !== undefined) $('prama_recovery').textContent = summary.recovery_observed === null ? '--' : (summary.recovery_observed ? 'YES' : 'NO');
     }
 
     async function post(path, body = {}) {

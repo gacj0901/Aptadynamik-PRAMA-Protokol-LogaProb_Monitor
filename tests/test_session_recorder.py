@@ -1,10 +1,15 @@
 import json
+import os
 import re
 import time
+import unittest
 from pathlib import Path
+
+from fastapi.testclient import TestClient
 
 from aptadynamik.observer.report_writer import ReportWriter, sanitize_model_id
 from aptadynamik.observer.session_recorder import SessionRecorder
+import scripts.prama_chat_server as chat_server
 
 
 def sample_windows():
@@ -163,3 +168,88 @@ def test_total_tokens_equals_sum_of_per_turn_assistant_tokens():
     assert expected == 3
     assert recorder.total_tokens() == expected
     assert recorder.live_summary()["total_tokens"] == expected
+
+
+class TestPramaChatServerPayload(unittest.TestCase):
+    def setUp(self):
+        self.previous_key = os.environ.pop("OPENAI_API_KEY", None)
+        chat_server.SESSIONS.clear()
+        self.client = TestClient(chat_server.app)
+
+    def tearDown(self):
+        chat_server.SESSIONS.clear()
+        if self.previous_key is not None:
+            os.environ["OPENAI_API_KEY"] = self.previous_key
+
+    def start_session(self):
+        response = self.client.post("/session/start")
+        self.assertEqual(response.status_code, 200)
+        return response.json()["session_id"]
+
+    def chat_events(self, session_id, message="Hello"):
+        response = self.client.post("/chat", json={"session_id": session_id, "user_message": message})
+        self.assertEqual(response.status_code, 200)
+        return [json.loads(line) for line in response.text.splitlines() if line.strip()]
+
+    def test_chat_payload_includes_prama_v022_regime_and_legacy_fields(self):
+        session_id = self.start_session()
+        events = self.chat_events(session_id)
+        prama_events = [event for event in events if event.get("type") in {"prama", "final_prama"}]
+        self.assertTrue(prama_events)
+        final = prama_events[-1]
+
+        for field in ["micro", "macro", "viability"]:
+            self.assertIn(field, final)
+        for field in [
+            "micro_raw",
+            "micro_health",
+            "macro_health",
+            "activity_raw",
+            "activity_structural",
+            "activity_effective",
+            "acople_effective",
+            "delta_instant",
+            "xi_norm",
+            "lambda_remaining",
+            "theta_dynamic",
+            "viability_margin",
+            "threshold_crossed",
+            "xi_exceeds_theta",
+            "boundary_side",
+            "viability_status",
+            "regime_label",
+            "regime_description",
+            "recovery_observed",
+            "first_crossing_turn",
+            "threshold_crossing_ratio",
+            "persistent_crossing_ratio",
+            "post_crossing_recovery_turns",
+            "trajectory_assessment",
+        ]:
+            self.assertIn(field, final)
+
+        summaries = [event for event in events if event.get("type") == "turn_summary"]
+        self.assertTrue(summaries)
+        self.assertIn("regime_label", summaries[-1]["session"])
+        self.assertIn("trajectory_assessment", summaries[-1]["session"])
+
+    def test_chat_payload_does_not_fail_without_prama_regime(self):
+        original_call_dry = chat_server.call_dry
+
+        def empty_call_dry(recorder, user_message):
+            return "No token fixture.", [], "stop"
+
+        chat_server.call_dry = empty_call_dry
+        try:
+            session_id = self.start_session()
+            events = self.chat_events(session_id)
+        finally:
+            chat_server.call_dry = original_call_dry
+
+        final = [event for event in events if event.get("type") == "final_prama"][-1]
+        self.assertIn("micro", final)
+        self.assertIn("macro", final)
+        self.assertIn("viability", final)
+        self.assertIn("regime_label", final)
+        self.assertIsNone(final["regime_label"])
+        self.assertEqual(final["boundary_side"], "UNRESOLVED")

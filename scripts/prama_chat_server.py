@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
-from aptadynamik.observer.prama_components import measure
+from aptadynamik.prama_components import measure
 from aptadynamik.observer.report_writer import ReportWriter
 from aptadynamik.observer.session_recorder import SessionRecorder
 
@@ -138,28 +138,83 @@ def compute_live_prama_events(tokens: List[Dict], turn_index: int, window_size: 
     calib_window = min(3, len(token_chunks))
     result = measure(token_chunks, calib_window=calib_window)
     events = []
+
+    def rounded(value, digits: int = 6):
+        if value is None:
+            return None
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(numeric):
+            return None
+        return round(numeric, digits)
+
+    def bool_value(value, default: bool = False) -> bool:
+        if value is None:
+            return default
+        return bool(value)
+
     for row in result["turns"]:
+        micro_health = rounded(row.get("micro_health"))
+        macro_health = rounded(row.get("macro_health"))
+        acople = rounded(row.get("acople"))
+        micro_drop = rounded(row.get("micro_drop"))
+        micro_raw = rounded(row.get("micro_raw"))
+        micro_excess = rounded(row.get("micro_excess"))
+        viability_margin = rounded(row.get("viability_margin"))
+        boundary_pressure = rounded(row.get("boundary_pressure"))
+        activity_raw = rounded(row.get("activity_raw"))
+        activity_structural = rounded(row.get("activity_structural"))
+        activity_effective = rounded(row.get("activity_effective"))
+        acople_effective = rounded(row.get("acople_effective"))
+        delta_instant = rounded(row.get("delta_instant"))
+        xi_norm = rounded(row.get("xi_norm"))
+        lambda_remaining = rounded(row.get("lambda_remaining"))
+        theta_dynamic = rounded(row.get("theta_dynamic"))
         events.append(
             {
                 "type": "prama",
                 "turn_index": turn_index,
-                "window_index": row["turn_index"],
-                "micro": round(float(row["micro"]), 6),
-                "macro": round(float(row["macro"]), 6),
-                "macro_health": round(float(row["macro_health"]), 6),
-                "acople": round(float(row["acople"]), 6),
-                "micro_drop": round(float(row["micro_drop"]), 6),
-                "viability": round(float(row["viability"]), 6),
-                "threshold_crossed": bool(row["threshold_crossed"]),
-                "boundary_side": row["boundary_side"],
-                "boundary_pressure": round(float(row["boundary_pressure"]), 6),
-                "viability_status": row["viability_status"],
-                "distance_to_threshold": round(float(row["distance_to_threshold"]), 6),
-                "rig": round(float(row["rig"]), 6),
-                "eco": round(float(row["eco"]), 6),
-                "alu": round(float(row["alu"]), 6),
-                "turb": round(float(row.get("turb", 0.0)), 6),
-                "collapse_threshold": result["collapse_threshold"],
+                "window_index": row.get("turn_index"),
+                "micro_raw": micro_raw,
+                "micro_health": micro_health,
+                "macro_health": macro_health,
+                "activity_raw": activity_raw,
+                "activity_structural": activity_structural,
+                "activity_effective": activity_effective,
+                "acople": acople,
+                "acople_effective": acople_effective,
+                "delta_instant": delta_instant,
+                "xi_norm": xi_norm,
+                "lambda_remaining": lambda_remaining,
+                "theta_dynamic": theta_dynamic,
+                "viability_margin": viability_margin,
+                "threshold_crossed": bool_value(row.get("threshold_crossed")),
+                "xi_exceeds_theta": bool_value(row.get("xi_exceeds_theta")),
+                "boundary_side": row.get("boundary_side", "UNRESOLVED"),
+                "boundary_pressure": boundary_pressure,
+                "viability_status": row.get("viability_status", "UNRESOLVED"),
+                "distance_to_threshold": rounded(row.get("distance_to_threshold")),
+                "micro_excess": micro_excess,
+                # Legacy visual aliases. These names keep their existing frontend meaning.
+                "micro": micro_health,
+                "macro": macro_health,
+                "viability": viability_margin,
+                # Legacy visual fallback; PRAMA Components v0.2.2 core does not compute these observer metrics.
+                "rig": 0.0,
+                "eco": 0.0,
+                "alu": 0.0,
+                "turb": 0.0,
+                "collapse_threshold": result.get("collapse_threshold"),
+                "regime_label": result.get("regime_label"),
+                "regime_description": result.get("regime_description"),
+                "recovery_observed": result.get("recovery_observed"),
+                "first_crossing_turn": result.get("first_crossing_turn"),
+                "threshold_crossing_ratio": result.get("threshold_crossing_ratio"),
+                "persistent_crossing_ratio": result.get("persistent_crossing_ratio"),
+                "post_crossing_recovery_turns": result.get("post_crossing_recovery_turns", []),
+                "trajectory_assessment": result.get("trajectory_assessment"),
                 "live_mode": "token_window",
             }
         )
@@ -237,6 +292,18 @@ def chat(request: ChatRequest):
     )
     summary = recorder.live_summary()
     prama_events = compute_live_prama_events(tokens, turn.get("turn_index", max(summary.get("turn_count", 1) - 1, 0)))
+    final_prama = prama_events[-1] if prama_events else {}
+    prama_session_state = {
+        "regime_label": final_prama.get("regime_label"),
+        "regime_description": final_prama.get("regime_description"),
+        "recovery_observed": final_prama.get("recovery_observed"),
+        "first_crossing_turn": final_prama.get("first_crossing_turn"),
+        "threshold_crossing_ratio": final_prama.get("threshold_crossing_ratio"),
+        "persistent_crossing_ratio": final_prama.get("persistent_crossing_ratio"),
+        "post_crossing_recovery_turns": final_prama.get("post_crossing_recovery_turns", []),
+        "trajectory_assessment": final_prama.get("trajectory_assessment"),
+    }
+    summary_with_prama = {**summary, **prama_session_state}
 
     def stream():
         step = 48
@@ -263,18 +330,40 @@ def chat(request: ChatRequest):
                     "boundary_pressure": None,
                     "viability_status": "UNRESOLVED",
                     "distance_to_threshold": None,
+                    "micro_raw": None,
+                    "micro_health": None,
+                    "activity_raw": None,
+                    "activity_structural": None,
+                    "activity_effective": None,
+                    "acople_effective": None,
+                    "delta_instant": None,
+                    "xi_norm": None,
+                    "lambda_remaining": None,
+                    "theta_dynamic": None,
+                    "viability_margin": None,
+                    "xi_exceeds_theta": False,
                     "micro": None,
                     "macro": None,
                     "macro_health": None,
                     "acople": None,
                     "micro_drop": None,
+                    # Legacy visual fallback; PRAMA Components v0.2.2 core does not compute these observer metrics.
                     "rig": 0.0,
                     "eco": 0.0,
                     "alu": 0.0,
+                    "turb": 0.0,
+                    "regime_label": None,
+                    "regime_description": None,
+                    "recovery_observed": None,
+                    "first_crossing_turn": None,
+                    "threshold_crossing_ratio": None,
+                    "persistent_crossing_ratio": None,
+                    "post_crossing_recovery_turns": [],
+                    "trajectory_assessment": None,
                     "live_mode": "turn_final_only",
                 }
             ) + "\n"
-        yield json.dumps({"type": "turn_summary", "turn": turn["summary"], "session": summary}) + "\n"
+        yield json.dumps({"type": "turn_summary", "turn": turn["summary"], "session": summary_with_prama}) + "\n"
 
     return StreamingResponse(stream(), media_type="application/x-ndjson")
 
