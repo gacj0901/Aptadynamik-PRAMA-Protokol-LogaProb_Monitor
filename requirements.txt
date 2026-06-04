@@ -1,2 +1,5 @@
 google-genai>=1.0.0
 openai
+fastapi
+uvicorn
+httpx
