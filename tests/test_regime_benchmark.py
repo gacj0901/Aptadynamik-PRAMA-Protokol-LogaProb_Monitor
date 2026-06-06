@@ -84,6 +84,7 @@ class TestRegimeBenchmark(unittest.TestCase):
             self.assertEqual(manifest["scenario_count"], 4)
             self.assertEqual(len(manifest["scenarios"]), 4)
             self.assertTrue(all(item["passed"] for item in manifest["scenarios"]))
+            self.assertEqual(manifest["aggregate_report_path"], str(output_dir / "aggregate_report.md"))
 
     def test_manifest_scenario_hashes_are_stable_from_summary_json(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -103,6 +104,21 @@ class TestRegimeBenchmark(unittest.TestCase):
             RUNNER.run_benchmark(output_dir)
 
             self.assertEqual({path.name for path in root.iterdir()}, {"regime_benchmark"})
+
+    def test_aggregate_report_contains_scenarios_note_and_hashes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "regime_benchmark"
+            RUNNER.run_benchmark(output_dir)
+            manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+            aggregate_report = output_dir / "aggregate_report.md"
+            text = aggregate_report.read_text(encoding="utf-8")
+
+            self.assertTrue(aggregate_report.exists())
+            self.assertIn("# PRAMA Regime Benchmark Aggregate Report", text)
+            self.assertIn("Threshold crossing is a local viability event", text)
+            for item in manifest["scenarios"]:
+                self.assertIn(item["scenario_name"], text)
+                self.assertIn(item["result_hash"], text)
 
 
 if __name__ == "__main__":

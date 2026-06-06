@@ -220,6 +220,7 @@ def manifest_payload(output: Path, summaries: List[Dict[str, Any]]) -> Dict[str,
         "benchmark_version": BENCHMARK_VERSION,
         "output_dir": str(output),
         "scenario_count": len(summaries),
+        "aggregate_report_path": str(output / "aggregate_report.md"),
         "scenarios": [
             {
                 "scenario_name": item["scenario"],
@@ -239,11 +240,87 @@ def manifest_payload(output: Path, summaries: List[Dict[str, Any]]) -> Dict[str,
     }
 
 
+def write_aggregate_report(path: Path, manifest: Dict[str, Any], summaries: List[Dict[str, Any]]) -> None:
+    lines = [
+        "# PRAMA Regime Benchmark Aggregate Report",
+        "",
+        "## Metadata",
+        "",
+        f"- generated_at: `{manifest.get('generated_at')}`",
+        f"- git_commit_sha: `{manifest.get('git_commit_sha')}`",
+        f"- git_branch: `{manifest.get('git_branch')}`",
+        f"- python_version: `{manifest.get('python_version')}`",
+        f"- platform: `{manifest.get('platform')}`",
+        f"- benchmark_version: `{manifest.get('benchmark_version')}`",
+        f"- scenario_count: `{manifest.get('scenario_count')}`",
+        "",
+        "## Summary",
+        "",
+        "| scenario | expected_regime | observed_regime | expected_assessment | observed_assessment | threshold_crossing_ratio | persistent_crossing_ratio | recovery_observed | passed | result_hash |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for item in summaries:
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    str(item["scenario"]),
+                    str(item["expected_regime_label"]),
+                    str(item["regime_label"]),
+                    str(item["expected_trajectory_assessment"]),
+                    str(item["trajectory_assessment"]),
+                    str(item["threshold_crossing_ratio"]),
+                    str(item["persistent_crossing_ratio"]),
+                    str(item["recovery_observed"]),
+                    str(item["passed"]),
+                    str(item["result_hash"]),
+                ]
+            )
+            + " |"
+        )
+    lines.extend(["", "## Scenarios", ""])
+    for item in summaries:
+        definition = SCENARIOS[item["scenario"]]
+        parameters = item["parameters"]
+        lines.extend(
+            [
+                f"### {item['scenario']}",
+                "",
+                definition["interpretation"],
+                "",
+                "#### Parameters",
+                "",
+                f"- theta0: `{parameters.get('theta0')}`",
+                f"- lambda0: `{parameters.get('lambda0')}`",
+                f"- memory_beta: `{parameters.get('memory_beta')}`",
+                f"- crossing_index_scope: `{parameters.get('crossing_index_scope')}`",
+                f"- baseline_n_calib: `{parameters.get('baseline_n_calib')}`",
+                "",
+                "#### Result",
+                "",
+                f"- expected_regime: `{item['expected_regime_label']}`",
+                f"- observed_regime: `{item['regime_label']}`",
+                f"- expected_trajectory: `{item['expected_trajectory_assessment']}`",
+                f"- observed_trajectory: `{item['trajectory_assessment']}`",
+                f"- first_crossing_turn: `{item['first_crossing_turn']}`",
+                f"- first_crossing_window: `{item['first_crossing_window']}`",
+                f"- threshold_crossing_ratio: `{item['threshold_crossing_ratio']}`",
+                f"- persistent_crossing_ratio: `{item['persistent_crossing_ratio']}`",
+                f"- recovery_observed: `{item['recovery_observed']}`",
+                f"- result_hash: `{item['result_hash']}`",
+                "",
+            ]
+        )
+    lines.extend(["## Methodological Note", "", METHODOLOGICAL_NOTE, ""])
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
 def run_benchmark(output_dir: Path | None = None) -> Dict[str, Any]:
     output = output_dir or default_output_dir()
     output.mkdir(parents=True, exist_ok=True)
     summaries = [run_scenario(name, definition, output) for name, definition in SCENARIOS.items()]
     manifest = manifest_payload(output, summaries)
+    write_aggregate_report(output / "aggregate_report.md", manifest, summaries)
     aggregate = {
         "output_dir": str(output),
         "scenario_count": len(summaries),
@@ -251,6 +328,7 @@ def run_benchmark(output_dir: Path | None = None) -> Dict[str, Any]:
         "scenarios": summaries,
         "methodological_note": METHODOLOGICAL_NOTE,
         "manifest_path": str(output / "manifest.json"),
+        "aggregate_report_path": str(output / "aggregate_report.md"),
     }
     (output / "summary.json").write_text(json.dumps(aggregate, indent=2), encoding="utf-8")
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")

@@ -92,6 +92,25 @@ json.dumps(summary, sort_keys=True, ensure_ascii=False)
 
 This makes the benchmark suitable for comparing deterministic instrument behavior across commits, machines, and later protocol revisions.
 
+## Aggregate Benchmark Report
+
+Each run also writes `aggregate_report.md` in the benchmark output directory.
+
+The aggregate report contains:
+
+- run metadata from `manifest.json`
+- a compact table of all scenarios
+- expected and observed regime labels
+- expected and observed trajectory assessments
+- threshold and persistence ratios
+- recovery flags
+- pass/fail status
+- result hashes
+- one technical interpretation section per scenario
+- the required methodological note on local threshold crossing versus trajectory regime classification
+
+This file is intended as the human-readable companion to `manifest.json`. The manifest is the machine-readable reproducibility record; the aggregate report is the review artifact for protocol notes, audit trails, and technical discussion.
+
 ## Limitations
 
 The benchmark is synthetic instrument validation. It does not prove that a live model has entered any empirical regime. Live evidence requires recorded session trajectories, enough valid windows, and later comparison against external functional channels where appropriate.
