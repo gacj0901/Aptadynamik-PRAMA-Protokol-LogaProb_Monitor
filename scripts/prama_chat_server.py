@@ -226,6 +226,41 @@ def compute_live_prama_events(tokens: List[Dict], turn_index: int, window_size: 
     return events + [final]
 
 
+def compute_session_prama_state(recorder: SessionRecorder, window_size: int = WINDOW_SIZE) -> Dict:
+    token_chunks = []
+    for turn in recorder.turns:
+        for start in range(0, len(turn.get("tokens", [])), window_size):
+            chunk = turn.get("tokens", [])[start : start + window_size]
+            if not chunk:
+                continue
+            token_chunks.append(
+                {
+                    "turn_index": len(token_chunks),
+                    "tokens": chunk,
+                }
+            )
+    if not token_chunks:
+        return {}
+    calib_window = min(3, len(token_chunks))
+    return measure(token_chunks, calib_window=calib_window, crossing_index_scope="token_window")
+
+
+def prama_state_from_result(result: Dict) -> Dict:
+    return {
+        "regime_label": result.get("regime_label"),
+        "regime_description": result.get("regime_description"),
+        "recovery_observed": result.get("recovery_observed"),
+        "first_crossing_turn": result.get("first_crossing_turn"),
+        "threshold_crossing_ratio": result.get("threshold_crossing_ratio"),
+        "persistent_crossing_ratio": result.get("persistent_crossing_ratio"),
+        "post_crossing_recovery_turns": result.get("post_crossing_recovery_turns", []),
+        "local_threshold_cascade": result.get("local_threshold_cascade"),
+        "crossing_index_scope": result.get("crossing_index_scope"),
+        "first_crossing_window": result.get("first_crossing_window"),
+        "trajectory_assessment": result.get("trajectory_assessment"),
+    }
+
+
 def call_openai(recorder: SessionRecorder, user_message: str):
     from openai import OpenAI
 
@@ -296,21 +331,12 @@ def chat(request: ChatRequest):
     summary = recorder.live_summary()
     prama_events = compute_live_prama_events(tokens, turn.get("turn_index", max(summary.get("turn_count", 1) - 1, 0)))
     final_prama = prama_events[-1] if prama_events else {}
-    prama_session_state = {
-        "regime_label": final_prama.get("regime_label"),
-        "regime_description": final_prama.get("regime_description"),
-        "recovery_observed": final_prama.get("recovery_observed"),
-        "first_crossing_turn": final_prama.get("first_crossing_turn"),
-        "threshold_crossing_ratio": final_prama.get("threshold_crossing_ratio"),
-        "persistent_crossing_ratio": final_prama.get("persistent_crossing_ratio"),
-        "post_crossing_recovery_turns": final_prama.get("post_crossing_recovery_turns", []),
-        "local_threshold_cascade": final_prama.get("local_threshold_cascade"),
-        "crossing_index_scope": final_prama.get("crossing_index_scope"),
-        "first_crossing_window": final_prama.get("first_crossing_window"),
-        "trajectory_assessment": final_prama.get("trajectory_assessment"),
-    }
+    session_prama = compute_session_prama_state(recorder)
+    prama_session_state = prama_state_from_result(session_prama or final_prama)
     recorder.update_prama_regime_state(prama_session_state)
     turn["summary"].update(prama_session_state)
+    for event in prama_events:
+        event.update(prama_session_state)
     summary_with_prama = {**summary, **prama_session_state}
 
     def stream():
