@@ -309,6 +309,8 @@ def chat(request: ChatRequest):
         "first_crossing_window": final_prama.get("first_crossing_window"),
         "trajectory_assessment": final_prama.get("trajectory_assessment"),
     }
+    recorder.update_prama_regime_state(prama_session_state)
+    turn["summary"].update(prama_session_state)
     summary_with_prama = {**summary, **prama_session_state}
 
     def stream():
