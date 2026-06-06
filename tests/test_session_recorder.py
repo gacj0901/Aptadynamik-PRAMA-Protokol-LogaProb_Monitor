@@ -2,6 +2,7 @@ import json
 import os
 import re
 import time
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -168,6 +169,51 @@ def test_total_tokens_equals_sum_of_per_turn_assistant_tokens():
     assert expected == 3
     assert recorder.total_tokens() == expected
     assert recorder.live_summary()["total_tokens"] == expected
+
+
+class TestPersistentAptadynamicRegime(unittest.TestCase):
+    def test_report_writer_persists_aptadynamic_regime_section(self):
+        recorder = recorder_with_turn(model="gpt-4o-mini")
+        recorder.update_prama_regime_state(
+            {
+                "regime_label": "III_STRUCTURAL_PULSATION",
+                "regime_description": "threshold crossing followed by recovery",
+                "trajectory_assessment": "THRESHOLD_CROSSED_STRUCTURAL_PULSATION",
+                "recovery_observed": True,
+                "first_crossing_turn": 2,
+                "threshold_crossing_ratio": 0.4,
+                "persistent_crossing_ratio": 0.3,
+                "post_crossing_recovery_turns": [3, 4],
+            }
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            result = ReportWriter(tmp, max_tokens=512, top_logprobs=5, window_size=16).write(recorder)
+            output_dir = Path(result["output_dir"])
+            report = output_dir.joinpath("report.md").read_text(encoding="utf-8")
+            raw = json.loads(output_dir.joinpath("raw.json").read_text(encoding="utf-8"))
+            metadata = json.loads(output_dir.joinpath("metadata.json").read_text(encoding="utf-8"))
+
+        self.assertIn("## Aptadynamic Regime", report)
+        self.assertIn("regime_label: `III_STRUCTURAL_PULSATION`", report)
+        self.assertIn("trajectory_assessment: `THRESHOLD_CROSSED_STRUCTURAL_PULSATION`", report)
+        self.assertIn("Threshold crossing indicates loss of point-regime viability", report)
+        self.assertEqual(raw["regime_label"], "III_STRUCTURAL_PULSATION")
+        self.assertEqual(raw["summary"]["trajectory_assessment"], "THRESHOLD_CROSSED_STRUCTURAL_PULSATION")
+        self.assertEqual(metadata["first_crossing_turn"], 2)
+        self.assertEqual(metadata["post_crossing_recovery_turns"], [3, 4])
+
+    def test_report_writer_handles_missing_aptadynamic_regime(self):
+        recorder = recorder_with_turn(model="gpt-4o-mini")
+        with tempfile.TemporaryDirectory() as tmp:
+            result = ReportWriter(tmp).write(recorder)
+            output_dir = Path(result["output_dir"])
+            report = output_dir.joinpath("report.md").read_text(encoding="utf-8")
+            raw = json.loads(output_dir.joinpath("raw.json").read_text(encoding="utf-8"))
+
+        self.assertIn("# PRAMA Monitor Session Report", report)
+        self.assertIn("No aptadynamic regime payload was recorded for this session.", report)
+        self.assertIsNone(raw["regime_label"])
+        self.assertEqual(raw["post_crossing_recovery_turns"], [])
 
 
 class TestPramaChatServerPayload(unittest.TestCase):

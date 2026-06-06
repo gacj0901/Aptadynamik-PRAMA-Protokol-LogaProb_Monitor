@@ -325,6 +325,59 @@ class TestPramaComponents(unittest.TestCase):
         self.assertGreaterEqual(result["persistent_crossing_ratio"], 0.80)
         self.assertLess(result["final_viability"], 0.0)
 
+    def test_token_window_short_response_with_local_crossings_is_calibrating(self):
+        result = measure(
+            [
+                turn(0, [-0.8, -1.2]),
+                turn(1, [-0.1, -2.1]),
+                turn(2, [-0.1, -2.1]),
+                turn(3, [-0.1, -2.1]),
+                turn(4, [-0.1, -2.1]),
+            ],
+            calib_window=1,
+            crossing_index_scope="token_window",
+        )
+        crossed_windows = [row for row in result["turns"] if row["threshold_crossed"]]
+
+        self.assertEqual(len(result["turns"]), 5)
+        self.assertGreaterEqual(len(crossed_windows), 4)
+        self.assertTrue(result["threshold_crossed"])
+        self.assertTrue(result["xi_exceeds_theta"])
+        self.assertEqual(result["regime_label"], "CALIBRATING")
+        self.assertEqual(result["trajectory_assessment"], "INSUFFICIENT_HISTORY")
+        self.assertNotEqual(result["regime_label"], "IV_ENTROPIC_COLLAPSE")
+        self.assertTrue(result["local_threshold_cascade"])
+        self.assertEqual(result["crossing_index_scope"], "token_window")
+        self.assertEqual(result["first_crossing_window"], 1)
+        self.assertEqual(result["persistent_crossing_ratio"], 0.0)
+
+    def test_token_window_sufficient_history_can_be_entropic_collapse(self):
+        result = measure(
+            [turn(0, [-0.8, -1.2])]
+            + [turn(index, [-0.1, -2.1]) for index in range(1, 13)],
+            calib_window=1,
+            crossing_index_scope="token_window",
+        )
+
+        self.assertEqual(len(result["turns"]), 13)
+        self.assertEqual(result["regime_label"], "IV_ENTROPIC_COLLAPSE")
+        self.assertEqual(result["trajectory_assessment"], "ENTROPIC_COLLAPSE")
+        self.assertGreaterEqual(result["persistent_crossing_ratio"], 0.80)
+
+    def test_token_window_crossing_with_recovery_is_structural_pulsation_after_history(self):
+        result = measure(
+            [turn(0, [-0.8, -1.2])]
+            + [turn(index, [-0.1, -2.1]) for index in range(1, 5)]
+            + [turn(index, [-0.8, -1.2]) for index in range(5, 14)],
+            calib_window=1,
+            crossing_index_scope="token_window",
+        )
+
+        self.assertEqual(result["regime_label"], "III_STRUCTURAL_PULSATION")
+        self.assertEqual(result["trajectory_assessment"], "THRESHOLD_CROSSED_STRUCTURAL_PULSATION")
+        self.assertTrue(result["recovery_observed"])
+        self.assertTrue(result["post_crossing_recovery_turns"])
+
     def test_low_activity_low_raw_acople_can_be_subcritical_dissolution(self):
         low_activity_turns = [
             {

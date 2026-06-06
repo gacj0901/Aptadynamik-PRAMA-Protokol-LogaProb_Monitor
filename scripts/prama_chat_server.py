@@ -136,7 +136,7 @@ def compute_live_prama_events(tokens: List[Dict], turn_index: int, window_size: 
     if not token_chunks:
         return []
     calib_window = min(3, len(token_chunks))
-    result = measure(token_chunks, calib_window=calib_window)
+    result = measure(token_chunks, calib_window=calib_window, crossing_index_scope="token_window")
     events = []
 
     def rounded(value, digits: int = 6):
@@ -214,6 +214,9 @@ def compute_live_prama_events(tokens: List[Dict], turn_index: int, window_size: 
                 "threshold_crossing_ratio": result.get("threshold_crossing_ratio"),
                 "persistent_crossing_ratio": result.get("persistent_crossing_ratio"),
                 "post_crossing_recovery_turns": result.get("post_crossing_recovery_turns", []),
+                "local_threshold_cascade": result.get("local_threshold_cascade"),
+                "crossing_index_scope": result.get("crossing_index_scope"),
+                "first_crossing_window": result.get("first_crossing_window"),
                 "trajectory_assessment": result.get("trajectory_assessment"),
                 "live_mode": "token_window",
             }
@@ -301,6 +304,9 @@ def chat(request: ChatRequest):
         "threshold_crossing_ratio": final_prama.get("threshold_crossing_ratio"),
         "persistent_crossing_ratio": final_prama.get("persistent_crossing_ratio"),
         "post_crossing_recovery_turns": final_prama.get("post_crossing_recovery_turns", []),
+        "local_threshold_cascade": final_prama.get("local_threshold_cascade"),
+        "crossing_index_scope": final_prama.get("crossing_index_scope"),
+        "first_crossing_window": final_prama.get("first_crossing_window"),
         "trajectory_assessment": final_prama.get("trajectory_assessment"),
     }
     summary_with_prama = {**summary, **prama_session_state}
@@ -359,6 +365,9 @@ def chat(request: ChatRequest):
                     "threshold_crossing_ratio": None,
                     "persistent_crossing_ratio": None,
                     "post_crossing_recovery_turns": [],
+                    "local_threshold_cascade": False,
+                    "crossing_index_scope": "token_window",
+                    "first_crossing_window": None,
                     "trajectory_assessment": None,
                     "live_mode": "turn_final_only",
                 }

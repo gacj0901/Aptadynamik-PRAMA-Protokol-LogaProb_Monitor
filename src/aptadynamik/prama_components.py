@@ -25,6 +25,9 @@ ECHO_NOTE = (
 DEFAULT_THETA0 = 0.35
 DEFAULT_LAMBDA0 = 1.0
 DEFAULT_MEMORY_BETA = 0.65
+DEFAULT_MIN_TURNS_FOR_REGIME = 3
+DEFAULT_MIN_WINDOWS_FOR_REGIME = 12
+DEFAULT_MIN_POST_CROSSING_UNITS = 2
 
 
 @dataclass
@@ -75,6 +78,9 @@ class SessionReading:
     threshold_crossing_ratio: float
     persistent_crossing_ratio: float
     post_crossing_recovery_turns: List[int]
+    local_threshold_cascade: bool
+    crossing_index_scope: str
+    first_crossing_window: Optional[int]
 
 
 def clamp01(value: float) -> float:
@@ -245,24 +251,61 @@ def classify_boundary(
     return winner
 
 
-def classify_regime(turns: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+def classify_regime(
+    turns: Sequence[Dict[str, Any]],
+    crossing_index_scope: str = "turn",
+    min_turns_for_regime: int = DEFAULT_MIN_TURNS_FOR_REGIME,
+    min_windows_for_regime: int = DEFAULT_MIN_WINDOWS_FOR_REGIME,
+    min_post_crossing_units: int = DEFAULT_MIN_POST_CROSSING_UNITS,
+) -> Dict[str, Any]:
     valid_turns = [turn for turn in turns if turn.get("logprob_valid")]
     if not valid_turns:
         return asdict(
             SessionReading(
-                regime_label="II_ORGANIZED_EQUILIBRIUM",
-                regime_description="no valid formal threshold crossing is available",
+                regime_label="CALIBRATING",
+                regime_description="insufficient history for aptadynamic regime classification",
                 recovery_observed=False,
                 first_crossing_turn=None,
                 threshold_crossing_ratio=0.0,
                 persistent_crossing_ratio=0.0,
                 post_crossing_recovery_turns=[],
+                local_threshold_cascade=False,
+                crossing_index_scope=crossing_index_scope,
+                first_crossing_window=None,
             )
         )
 
     crossing_turns = [turn for turn in valid_turns if turn.get("threshold_crossed")]
     first_crossing_turn = crossing_turns[0]["turn_index"] if crossing_turns else None
     threshold_crossing_ratio = len(crossing_turns) / len(valid_turns)
+    local_threshold_cascade = len(crossing_turns) >= min_post_crossing_units
+    first_crossing_window = int(first_crossing_turn) if crossing_index_scope == "token_window" and first_crossing_turn is not None else None
+    enough_history = (
+        len(valid_turns) >= min_windows_for_regime
+        if crossing_index_scope == "token_window"
+        else len(valid_turns) >= min_turns_for_regime
+    )
+    post_crossing_units = (
+        len([turn for turn in valid_turns if first_crossing_turn is not None and turn["turn_index"] >= first_crossing_turn])
+        if first_crossing_turn is not None
+        else 0
+    )
+    if not enough_history or (first_crossing_turn is not None and post_crossing_units < min_post_crossing_units):
+        return asdict(
+            SessionReading(
+                regime_label="CALIBRATING",
+                regime_description="insufficient history for aptadynamic regime classification",
+                recovery_observed=False,
+                first_crossing_turn=int(first_crossing_turn) if first_crossing_turn is not None else None,
+                threshold_crossing_ratio=threshold_crossing_ratio,
+                persistent_crossing_ratio=0.0,
+                post_crossing_recovery_turns=[],
+                local_threshold_cascade=local_threshold_cascade,
+                crossing_index_scope=crossing_index_scope,
+                first_crossing_window=first_crossing_window,
+            )
+        )
+
     final_margin = valid_turns[-1].get("viability_margin")
     avg_activity_effective = mean(float(turn.get("activity_effective") or 0.0) for turn in valid_turns)
     avg_acople_raw = mean(float(turn.get("acople") or 0.0) for turn in valid_turns)
@@ -278,6 +321,9 @@ def classify_regime(turns: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
                     threshold_crossing_ratio=threshold_crossing_ratio,
                     persistent_crossing_ratio=0.0,
                     post_crossing_recovery_turns=[],
+                    local_threshold_cascade=local_threshold_cascade,
+                    crossing_index_scope=crossing_index_scope,
+                    first_crossing_window=first_crossing_window,
                 )
             )
         return asdict(
@@ -289,6 +335,9 @@ def classify_regime(turns: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
                 threshold_crossing_ratio=threshold_crossing_ratio,
                 persistent_crossing_ratio=0.0,
                 post_crossing_recovery_turns=[],
+                local_threshold_cascade=local_threshold_cascade,
+                crossing_index_scope=crossing_index_scope,
+                first_crossing_window=first_crossing_window,
             )
         )
 
@@ -327,11 +376,16 @@ def classify_regime(turns: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
             threshold_crossing_ratio=threshold_crossing_ratio,
             persistent_crossing_ratio=persistent_crossing_ratio,
             post_crossing_recovery_turns=post_crossing_recovery_turns,
+            local_threshold_cascade=local_threshold_cascade,
+            crossing_index_scope=crossing_index_scope,
+            first_crossing_window=first_crossing_window,
         )
     )
 
 
 def trajectory_assessment_from_regime(regime_label: str) -> str:
+    if regime_label == "CALIBRATING":
+        return "INSUFFICIENT_HISTORY"
     if regime_label == "III_STRUCTURAL_PULSATION":
         return "THRESHOLD_CROSSED_STRUCTURAL_PULSATION"
     if regime_label == "IV_ENTROPIC_COLLAPSE":
@@ -352,6 +406,10 @@ def measure(
     critical_margin: float = 0.05,
     side_threshold: float = 0.05,
     side_margin: float = 0.03,
+    min_turns_for_regime: int = DEFAULT_MIN_TURNS_FOR_REGIME,
+    min_windows_for_regime: int = DEFAULT_MIN_WINDOWS_FOR_REGIME,
+    min_post_crossing_units: int = DEFAULT_MIN_POST_CROSSING_UNITS,
+    crossing_index_scope: str = "turn",
 ) -> Dict[str, Any]:
     baseline = baseline_from_turns(turns, calib_window=calib_window)
     baseline_micro = float(baseline["baseline_micro"])
@@ -493,7 +551,13 @@ def measure(
         for row in valid_rows
         if row.get("turn_index") != 0 and row.get("viability_status") in {"THRESHOLD_CROSSED", "NEAR_THRESHOLD"}
     ]
-    regime = classify_regime(rows)
+    regime = classify_regime(
+        rows,
+        crossing_index_scope=crossing_index_scope,
+        min_turns_for_regime=min_turns_for_regime,
+        min_windows_for_regime=min_windows_for_regime,
+        min_post_crossing_units=min_post_crossing_units,
+    )
     trajectory_threshold_crossed = any(row.get("threshold_crossed") for row in valid_rows)
     trajectory_xi_exceeds_theta = any(
         row.get("xi_exceeds_theta") and row.get("turn_index") != 0 for row in valid_rows
@@ -534,6 +598,9 @@ def measure(
         "threshold_crossing_ratio": regime["threshold_crossing_ratio"],
         "persistent_crossing_ratio": regime["persistent_crossing_ratio"],
         "post_crossing_recovery_turns": regime["post_crossing_recovery_turns"],
+        "local_threshold_cascade": regime["local_threshold_cascade"],
+        "crossing_index_scope": regime["crossing_index_scope"],
+        "first_crossing_window": regime["first_crossing_window"],
         "trajectory_assessment": trajectory_assessment_from_regime(regime["regime_label"]),
         "turns": rows,
         "notes": {
