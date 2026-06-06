@@ -111,6 +111,28 @@ The aggregate report contains:
 
 This file is intended as the human-readable companion to `manifest.json`. The manifest is the machine-readable reproducibility record; the aggregate report is the review artifact for protocol notes, audit trails, and technical discussion.
 
+## Exporting Evidence Bundles
+
+Use `scripts/export_regime_benchmark_evidence.py` to generate an external evidence bundle without committing generated artifacts to the source repository.
+
+PowerShell example:
+
+```powershell
+python scripts\export_regime_benchmark_evidence.py --evidence-dir "C:\Users\THINKPAD\Desktop\Documentación PRAMA Protokol ProbLogs Mónitor" --run-label "initial-controlled-regimes"
+```
+
+The exporter runs the deterministic benchmark, then writes an external folder containing:
+
+- `manifest.json`
+- `aggregate_report.md`
+- `scenario_index.md`
+- `README.md`
+- `scenarios/<scenario_name>/summary.json`
+- `scenarios/<scenario_name>/report.md`
+- `scenarios/<scenario_name>/raw.json` when `--include-raw true`
+
+Generated evidence artifacts are intentionally kept outside the source repository.
+
 ## Limitations
 
 The benchmark is synthetic instrument validation. It does not prove that a live model has entered any empirical regime. Live evidence requires recorded session trajectories, enough valid windows, and later comparison against external functional channels where appropriate.
