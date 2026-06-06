@@ -67,6 +67,43 @@ class TestRegimeBenchmark(unittest.TestCase):
             self.assertEqual(summary["trajectory_assessment"], "INSUFFICIENT_HISTORY")
             self.assertNotEqual(summary["regime_label"], "IV_ENTROPIC_COLLAPSE")
 
+    def test_manifest_contains_reproducibility_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "regime_benchmark"
+            RUNNER.run_benchmark(output_dir)
+            manifest_path = output_dir / "manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+            self.assertTrue(manifest_path.exists())
+            self.assertIn("generated_at", manifest)
+            self.assertIn("git_commit_sha", manifest)
+            self.assertIn("git_branch", manifest)
+            self.assertIn("python_version", manifest)
+            self.assertIn("platform", manifest)
+            self.assertIn("benchmark_version", manifest)
+            self.assertEqual(manifest["scenario_count"], 4)
+            self.assertEqual(len(manifest["scenarios"]), 4)
+            self.assertTrue(all(item["passed"] for item in manifest["scenarios"]))
+
+    def test_manifest_scenario_hashes_are_stable_from_summary_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "regime_benchmark"
+            RUNNER.run_benchmark(output_dir)
+            manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+
+            for item in manifest["scenarios"]:
+                self.assertTrue(item["result_hash"])
+                summary = json.loads(Path(item["summary_path"]).read_text(encoding="utf-8"))
+                self.assertEqual(item["result_hash"], RUNNER.stable_summary_hash(summary))
+
+    def test_benchmark_writes_only_inside_requested_output_dir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output_dir = root / "regime_benchmark"
+            RUNNER.run_benchmark(output_dir)
+
+            self.assertEqual({path.name for path in root.iterdir()}, {"regime_benchmark"})
+
 
 if __name__ == "__main__":
     unittest.main()

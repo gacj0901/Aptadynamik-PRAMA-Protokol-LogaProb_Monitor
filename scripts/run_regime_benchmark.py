@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import platform
+import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
@@ -9,6 +13,7 @@ from typing import Any, Dict, List
 from aptadynamik.prama_components import measure
 
 
+BENCHMARK_VERSION = "0.1.0"
 METHODOLOGICAL_NOTE = (
     "Threshold crossing is a local viability event; regime classification "
     "requires sufficient trajectory history."
@@ -91,6 +96,25 @@ def default_output_dir() -> Path:
     return Path("results") / f"regime_benchmark_{stamp}"
 
 
+def git_value(args: List[str]) -> str | None:
+    try:
+        completed = subprocess.run(
+            ["git", *args],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    value = completed.stdout.strip()
+    return value or None
+
+
+def stable_summary_hash(summary: Dict[str, Any]) -> str:
+    payload = json.dumps(summary, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def scenario_summary(name: str, result: Dict[str, Any], expected: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "scenario": name,
@@ -150,34 +174,100 @@ def write_scenario_report(path: Path, summary: Dict[str, Any], result: Dict[str,
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
+def scenario_parameters(result: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "theta0": result.get("theta0"),
+        "lambda0": result.get("lambda0"),
+        "memory_beta": result.get("memory_beta"),
+        "crossing_index_scope": result.get("crossing_index_scope"),
+        "baseline_n_calib": result.get("baseline_n_calib"),
+    }
+
+
 def run_scenario(name: str, definition: Dict[str, Any], output_dir: Path) -> Dict[str, Any]:
     turns = definition["factory"]()
     result = measure(turns, calib_window=1, crossing_index_scope="token_window")
     summary = scenario_summary(name, result, definition)
     scenario_dir = output_dir / name
     scenario_dir.mkdir(parents=True, exist_ok=True)
-    (scenario_dir / "raw.json").write_text(
+    raw_path = scenario_dir / "raw.json"
+    summary_path = scenario_dir / "summary.json"
+    report_path = scenario_dir / "report.md"
+    raw_path.write_text(
         json.dumps({"scenario": name, "synthetic_turns": turns, "result": result}, indent=2),
         encoding="utf-8",
     )
-    (scenario_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    write_scenario_report(scenario_dir / "report.md", summary, result, definition["interpretation"])
-    return summary
+    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    write_scenario_report(report_path, summary, result, definition["interpretation"])
+    result_hash = stable_summary_hash(summary)
+    return {
+        **summary,
+        "raw_path": str(raw_path),
+        "report_path": str(report_path),
+        "summary_path": str(summary_path),
+        "parameters": scenario_parameters(result),
+        "result_hash": result_hash,
+    }
+
+
+def manifest_payload(output: Path, summaries: List[Dict[str, Any]]) -> Dict[str, Any]:
+    return {
+        "generated_at": datetime.now().isoformat(),
+        "git_commit_sha": git_value(["rev-parse", "HEAD"]),
+        "git_branch": git_value(["branch", "--show-current"]),
+        "python_version": sys.version,
+        "platform": platform.platform(),
+        "benchmark_version": BENCHMARK_VERSION,
+        "output_dir": str(output),
+        "scenario_count": len(summaries),
+        "scenarios": [
+            {
+                "scenario_name": item["scenario"],
+                "expected_regime_label": item["expected_regime_label"],
+                "observed_regime_label": item["regime_label"],
+                "expected_trajectory_assessment": item["expected_trajectory_assessment"],
+                "observed_trajectory_assessment": item["trajectory_assessment"],
+                "passed": item["passed"],
+                "raw_path": item["raw_path"],
+                "report_path": item["report_path"],
+                "summary_path": item["summary_path"],
+                "parameters": item["parameters"],
+                "result_hash": item["result_hash"],
+            }
+            for item in summaries
+        ],
+    }
 
 
 def run_benchmark(output_dir: Path | None = None) -> Dict[str, Any]:
     output = output_dir or default_output_dir()
     output.mkdir(parents=True, exist_ok=True)
     summaries = [run_scenario(name, definition, output) for name, definition in SCENARIOS.items()]
+    manifest = manifest_payload(output, summaries)
     aggregate = {
         "output_dir": str(output),
         "scenario_count": len(summaries),
         "passed": all(item["passed"] for item in summaries),
         "scenarios": summaries,
         "methodological_note": METHODOLOGICAL_NOTE,
+        "manifest_path": str(output / "manifest.json"),
     }
     (output / "summary.json").write_text(json.dumps(aggregate, indent=2), encoding="utf-8")
+    (output / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     return aggregate
+
+
+def print_result_table(result: Dict[str, Any]) -> None:
+    print("scenario | expected | observed | passed")
+    print("--- | --- | --- | ---")
+    for item in result["scenarios"]:
+        print(
+            f"{item['scenario']} | "
+            f"{item['expected_regime_label']} | "
+            f"{item['regime_label']} | "
+            f"{str(bool(item['passed'])).lower()}"
+        )
+    print(f"output_dir | {result['output_dir']}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -194,7 +284,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     result = run_benchmark(args.output_dir)
-    print(json.dumps(result, indent=2))
+    print_result_table(result)
 
 
 if __name__ == "__main__":

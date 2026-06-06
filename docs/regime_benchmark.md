@@ -66,6 +66,32 @@ Regime III requires crossing plus recovery or bounded alternation after crossing
 
 Regime IV requires persistent crossing without recovery and negative final viability margin. It is not assigned from a short local cascade.
 
+## Reproducibility Metadata
+
+Each benchmark run writes a root-level `manifest.json` next to the aggregate `summary.json`.
+
+The manifest records:
+
+- generation timestamp
+- Git commit SHA and branch when available
+- Python version
+- platform string
+- benchmark version
+- output directory
+- scenario count
+- per-scenario expected and observed labels
+- artifact paths for `raw.json`, `report.md`, and `summary.json`
+- parameter snapshot
+- stable SHA256 hash of each normalized scenario `summary.json`
+
+The per-scenario `result_hash` is computed from:
+
+```python
+json.dumps(summary, sort_keys=True, ensure_ascii=False)
+```
+
+This makes the benchmark suitable for comparing deterministic instrument behavior across commits, machines, and later protocol revisions.
+
 ## Limitations
 
 The benchmark is synthetic instrument validation. It does not prove that a live model has entered any empirical regime. Live evidence requires recorded session trajectories, enough valid windows, and later comparison against external functional channels where appropriate.
