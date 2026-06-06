@@ -143,6 +143,14 @@ class ReportWriter:
             "max_tokens": self.max_tokens,
             "top_logprobs": self.top_logprobs,
             "window_size": self.window_size,
+            "regime_label": summary.get("regime_label"),
+            "regime_description": summary.get("regime_description"),
+            "trajectory_assessment": summary.get("trajectory_assessment"),
+            "recovery_observed": summary.get("recovery_observed"),
+            "first_crossing_turn": summary.get("first_crossing_turn"),
+            "threshold_crossing_ratio": summary.get("threshold_crossing_ratio"),
+            "persistent_crossing_ratio": summary.get("persistent_crossing_ratio"),
+            "post_crossing_recovery_turns": summary.get("post_crossing_recovery_turns", []),
         }
 
     def _write_detail(self, recorder: SessionRecorder, path: Path) -> None:
@@ -219,7 +227,10 @@ class ReportWriter:
                 f"| {turn_summary.get('avg_rigidity', 0.0)} "
                 f"| {turn_summary.get('avg_uncertainty', 0.0)} |"
             )
+        regime_lines = self._aptadynamic_regime_lines(summary)
         lines.extend([
+            "",
+            *regime_lines,
             "",
             "## Turns",
             "",
@@ -266,6 +277,46 @@ class ReportWriter:
             "",
         ])
         path.write_text("\n".join(lines), encoding="utf-8")
+
+    def _aptadynamic_regime_lines(self, summary: Dict[str, object]) -> list[str]:
+        has_regime = any(
+            summary.get(key) is not None
+            for key in (
+                "regime_label",
+                "trajectory_assessment",
+                "recovery_observed",
+                "first_crossing_turn",
+                "threshold_crossing_ratio",
+                "persistent_crossing_ratio",
+            )
+        ) or bool(summary.get("post_crossing_recovery_turns"))
+        lines = [
+            "## Aptadynamic Regime",
+            "",
+        ]
+        if not has_regime:
+            lines.extend(
+                [
+                    "No aptadynamic regime payload was recorded for this session.",
+                    "",
+                ]
+            )
+            return lines
+        lines.extend(
+            [
+                f"- regime_label: `{summary.get('regime_label')}`",
+                f"- trajectory_assessment: `{summary.get('trajectory_assessment')}`",
+                f"- recovery_observed: `{summary.get('recovery_observed')}`",
+                f"- first_crossing_turn: `{summary.get('first_crossing_turn')}`",
+                f"- threshold_crossing_ratio: `{summary.get('threshold_crossing_ratio')}`",
+                f"- persistent_crossing_ratio: `{summary.get('persistent_crossing_ratio')}`",
+                f"- post_crossing_recovery_turns: `{summary.get('post_crossing_recovery_turns', [])}`",
+                "",
+                "Threshold crossing indicates loss of point-regime viability; terminal collapse requires persistence without recovery.",
+                "",
+            ]
+        )
+        return lines
 
     def _compact_turn_metrics(self, turn):
         summary = turn.get("summary", {})

@@ -16,6 +16,19 @@ def parse_time(value: Optional[str]) -> Optional[datetime]:
     return datetime.fromisoformat(value)
 
 
+def default_prama_regime_state() -> Dict[str, Any]:
+    return {
+        "regime_label": None,
+        "regime_description": None,
+        "trajectory_assessment": None,
+        "recovery_observed": None,
+        "first_crossing_turn": None,
+        "threshold_crossing_ratio": None,
+        "persistent_crossing_ratio": None,
+        "post_crossing_recovery_turns": [],
+    }
+
+
 @dataclass
 class SessionRecorder:
     session_id: str
@@ -26,6 +39,7 @@ class SessionRecorder:
     output_prefix: Optional[str] = None
     output_dir: Optional[str] = None
     output_folder_name: Optional[str] = None
+    prama_regime_state: Dict[str, Any] = field(default_factory=default_prama_regime_state)
     turns: List[Dict[str, Any]] = field(default_factory=list)
     status: str = "active"
 
@@ -56,7 +70,25 @@ class SessionRecorder:
             "summary": summary,
         }
         self.turns.append(turn)
+        self.update_prama_regime_state(summary)
         return turn
+
+    def update_prama_regime_state(self, payload: Optional[Dict[str, Any]]) -> None:
+        if not payload:
+            return
+        current = {**default_prama_regime_state(), **self.prama_regime_state}
+        changed = False
+        for key in current:
+            if key not in payload:
+                continue
+            value = payload.get(key)
+            if key == "post_crossing_recovery_turns":
+                current[key] = value if isinstance(value, list) else []
+            else:
+                current[key] = value
+            changed = True
+        if changed:
+            self.prama_regime_state = current
 
     def stop(self) -> None:
         if self.closed_at is None:
@@ -96,6 +128,7 @@ class SessionRecorder:
         summary = summarize_windows(all_windows)
         total_tokens = self.total_tokens()
         total_windows = self.total_windows()
+        prama_regime_state = {**default_prama_regime_state(), **self.prama_regime_state}
         return {
             "session_id": self.session_id,
             "model": self.model,
@@ -114,9 +147,11 @@ class SessionRecorder:
             "token_count": total_tokens,
             "window_count": total_windows,
             **summary,
+            **prama_regime_state,
         }
 
     def to_dict(self) -> Dict[str, Any]:
+        prama_regime_state = {**default_prama_regime_state(), **self.prama_regime_state}
         return {
             "session_id": self.session_id,
             "model": self.model,
@@ -128,6 +163,8 @@ class SessionRecorder:
             "started_at": self.created_at,
             "stopped_at": self.closed_at,
             "status": self.status,
+            "prama_regime_state": prama_regime_state,
+            **prama_regime_state,
             "turns": self.turns,
             "summary": self.live_summary(),
         }
