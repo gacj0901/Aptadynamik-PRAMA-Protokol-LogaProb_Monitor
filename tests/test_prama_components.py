@@ -11,6 +11,8 @@ from aptadynamik.prama_components import (
     centered_health,
     collapse_xi_norm,
     measure,
+    normalize_regime_label,
+    normalize_trajectory_assessment,
 )
 
 
@@ -270,7 +272,7 @@ class TestPramaComponents(unittest.TestCase):
 
         self.assertIsNone(row["compression_gap"])
 
-    def test_organized_equilibrium_without_crossing(self):
+    def test_organized_stability_without_crossing(self):
         result = measure(
             [
                 turn(0, [-0.75, -1.25]),
@@ -280,11 +282,19 @@ class TestPramaComponents(unittest.TestCase):
             calib_window=1,
         )
 
-        self.assertEqual(result["regime_label"], "II_ORGANIZED_EQUILIBRIUM")
-        self.assertEqual(result["trajectory_assessment"], "VIABLE_ORGANIZED_EQUILIBRIUM")
+        self.assertEqual(result["regime_label"], "II_ORGANIZED_STABILITY")
+        self.assertEqual(result["trajectory_assessment"], "VIABLE_ORGANIZED_STABILITY")
         self.assertFalse(result["threshold_crossed"])
         self.assertFalse(result["recovery_observed"])
         self.assertIsNone(result["first_crossing_turn"])
+
+    def test_organized_equilibrium_legacy_aliases_normalize_to_stability(self):
+        self.assertEqual(normalize_regime_label("II_ORGANIZED_EQUILIBRIUM"), "II_ORGANIZED_STABILITY")
+        self.assertEqual(
+            normalize_trajectory_assessment("VIABLE_ORGANIZED_EQUILIBRIUM"),
+            "VIABLE_ORGANIZED_STABILITY",
+        )
+        self.assertEqual(normalize_regime_label("II_ORGANIZED_STABILITY"), "II_ORGANIZED_STABILITY")
 
     def test_crossing_with_recovery_is_structural_pulsation(self):
         result = measure(

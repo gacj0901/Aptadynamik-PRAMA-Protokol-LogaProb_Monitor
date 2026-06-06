@@ -42,11 +42,11 @@ This crossing indicates loss of fixed-point viability. It does not, by itself, i
 
 Operationally, this regime is reserved for cases with persistently low structural activity and persistently low raw acople. It is not intended to classify isolated acknowledgements or brief low-activity turns. The criteria are conservative: low average `activity_effective`, low average raw `acople`, and enough valid turns to avoid overreading a transient.
 
-### II_ORGANIZED_EQUILIBRIUM
+### II_ORGANIZED_STABILITY
 
-`II_ORGANIZED_EQUILIBRIUM` indicates no formal threshold crossing.
+`II_ORGANIZED_STABILITY` indicates no formal threshold crossing.
 
-The trajectory conserves point-regime viability under the tested parameters. In this regime, the system remains within the operational inequality:
+The trajectory conserves organized dynamic viability under the tested parameters. In Aptadynamia, stability is not static equilibrium; it is structured persistence under flow. In this regime, the system remains within the operational inequality:
 
 ```text
 Ξ(t) ≤ Θ(λ(t))
@@ -81,7 +81,7 @@ The operational decision logic is:
 
 ```text
 if no crossing:
-    II_ORGANIZED_EQUILIBRIUM
+    II_ORGANIZED_STABILITY
 elif crossing and recovery:
     III_STRUCTURAL_PULSATION
 elif crossing and persistent ratio high and final margin negative:

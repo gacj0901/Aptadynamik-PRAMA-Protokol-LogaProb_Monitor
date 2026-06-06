@@ -35,7 +35,7 @@ class TestRegimeBenchmark(unittest.TestCase):
     def test_each_scenario_produces_expected_regime_and_artifacts(self):
         expected = {
             "short_calibrating_local_crossings": ("CALIBRATING", "INSUFFICIENT_HISTORY"),
-            "organized_viability": ("II_ORGANIZED_EQUILIBRIUM", "VIABLE_ORGANIZED_EQUILIBRIUM"),
+            "organized_viability": ("II_ORGANIZED_STABILITY", "VIABLE_ORGANIZED_STABILITY"),
             "structural_pulsation": ("III_STRUCTURAL_PULSATION", "THRESHOLD_CROSSED_STRUCTURAL_PULSATION"),
             "entropic_collapse": ("IV_ENTROPIC_COLLAPSE", "ENTROPIC_COLLAPSE"),
         }

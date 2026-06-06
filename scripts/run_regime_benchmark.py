@@ -63,11 +63,11 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
     },
     "organized_viability": {
         "factory": organized_viability,
-        "expected_regime_label": "II_ORGANIZED_EQUILIBRIUM",
-        "expected_trajectory_assessment": "VIABLE_ORGANIZED_EQUILIBRIUM",
+        "expected_regime_label": "II_ORGANIZED_STABILITY",
+        "expected_trajectory_assessment": "VIABLE_ORGANIZED_STABILITY",
         "interpretation": (
             "The trajectory has sufficient history and does not cross the dynamic threshold, "
-            "so it remains in organized equilibrium."
+            "so it remains in organized dynamic stability."
         ),
     },
     "structural_pulsation": {

@@ -37,8 +37,10 @@ Sufficient trajectory history with no formal threshold crossing.
 
 Expected result:
 
-- `II_ORGANIZED_EQUILIBRIUM`
-- `VIABLE_ORGANIZED_EQUILIBRIUM`
+- `II_ORGANIZED_STABILITY`
+- `VIABLE_ORGANIZED_STABILITY`
+
+The earlier label `II_ORGANIZED_EQUILIBRIUM` is retained only as a historical alias. It was replaced because Aptadynamia treats stability as organized dynamic viability, not static equilibrium.
 
 ### structural_pulsation
 
@@ -60,7 +62,7 @@ Expected result:
 
 ## Criteria
 
-Regime II requires sufficient history and no formal crossing.
+Regime II requires sufficient history and no formal crossing. It is named `II_ORGANIZED_STABILITY` because organized stability means dynamic, structured viability under flow rather than immobile equilibrium.
 
 Regime III requires crossing plus recovery or bounded alternation after crossing.
 
@@ -132,6 +134,20 @@ The exporter runs the deterministic benchmark, then writes an external folder co
 - `scenarios/<scenario_name>/raw.json` when `--include-raw true`
 
 Generated evidence artifacts are intentionally kept outside the source repository.
+
+## Legacy Regime Alias
+
+The benchmark now emits:
+
+- `II_ORGANIZED_STABILITY`
+- `VIABLE_ORGANIZED_STABILITY`
+
+The older names remain accepted by verification tools as legacy aliases:
+
+- `II_ORGANIZED_EQUILIBRIUM` -> `II_ORGANIZED_STABILITY`
+- `VIABLE_ORGANIZED_EQUILIBRIUM` -> `VIABLE_ORGANIZED_STABILITY`
+
+This preserves validation of earlier evidence bundles while keeping new outputs conceptually aligned with Aptadynamia: stability is organized and dynamic, not static equilibrium.
 
 ## Limitations
 

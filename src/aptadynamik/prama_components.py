@@ -28,6 +28,26 @@ DEFAULT_MEMORY_BETA = 0.65
 DEFAULT_MIN_TURNS_FOR_REGIME = 3
 DEFAULT_MIN_WINDOWS_FOR_REGIME = 12
 DEFAULT_MIN_POST_CROSSING_UNITS = 2
+ORGANIZED_STABILITY_REGIME = "II_ORGANIZED_STABILITY"
+ORGANIZED_STABILITY_ASSESSMENT = "VIABLE_ORGANIZED_STABILITY"
+LEGACY_REGIME_ALIASES = {
+    "II_ORGANIZED_EQUILIBRIUM": ORGANIZED_STABILITY_REGIME,
+}
+LEGACY_ASSESSMENT_ALIASES = {
+    "VIABLE_ORGANIZED_EQUILIBRIUM": ORGANIZED_STABILITY_ASSESSMENT,
+}
+
+
+def normalize_regime_label(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return LEGACY_REGIME_ALIASES.get(value, value)
+
+
+def normalize_trajectory_assessment(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return LEGACY_ASSESSMENT_ALIASES.get(value, value)
 
 
 @dataclass
@@ -328,8 +348,8 @@ def classify_regime(
             )
         return asdict(
             SessionReading(
-                regime_label="II_ORGANIZED_EQUILIBRIUM",
-                regime_description="no formal threshold crossing; point-regime viability is conserved",
+                regime_label=ORGANIZED_STABILITY_REGIME,
+                regime_description="no formal threshold crossing; organized dynamic stability is conserved",
                 recovery_observed=False,
                 first_crossing_turn=None,
                 threshold_crossing_ratio=threshold_crossing_ratio,
@@ -384,14 +404,15 @@ def classify_regime(
 
 
 def trajectory_assessment_from_regime(regime_label: str) -> str:
+    regime_label = normalize_regime_label(regime_label) or regime_label
     if regime_label == "CALIBRATING":
         return "INSUFFICIENT_HISTORY"
     if regime_label == "III_STRUCTURAL_PULSATION":
         return "THRESHOLD_CROSSED_STRUCTURAL_PULSATION"
     if regime_label == "IV_ENTROPIC_COLLAPSE":
         return "ENTROPIC_COLLAPSE"
-    if regime_label == "II_ORGANIZED_EQUILIBRIUM":
-        return "VIABLE_ORGANIZED_EQUILIBRIUM"
+    if regime_label == ORGANIZED_STABILITY_REGIME:
+        return ORGANIZED_STABILITY_ASSESSMENT
     if regime_label == "I_SUBCRITICAL_DISSOLUTION":
         return "SUBCRITICAL_DISSOLUTION"
     return "UNRESOLVED_APTADYNAMIC_REGIME"
