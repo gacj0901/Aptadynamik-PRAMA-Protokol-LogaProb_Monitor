@@ -425,6 +425,25 @@ def trajectory_assessment_from_regime(regime_label: str) -> str:
     return "UNRESOLVED_APTADYNAMIC_REGIME"
 
 
+def pulsation_subtype_from_state(
+    regime_label: str,
+    recovery_observed: bool,
+    final_instant_recovered: bool,
+    final_instant_threshold_crossed: bool,
+) -> Optional[str]:
+    if regime_label != "III_STRUCTURAL_PULSATION":
+        return None
+    recovered_finally = bool(final_instant_recovered)
+    relapsed_after_recovery = bool(recovery_observed and final_instant_threshold_crossed)
+    if recovered_finally:
+        return "RECOVERED_FINAL"
+    if relapsed_after_recovery:
+        return "RELAPSED_AFTER_RECOVERY"
+    if recovery_observed:
+        return "ACTIVE_PULSATION"
+    return None
+
+
 def measure(
     turns: Sequence[Dict[str, Any]],
     calib_window: Optional[int] = None,
@@ -601,6 +620,16 @@ def measure(
     trajectory_xi_exceeds_theta = any(
         row.get("xi_exceeds_theta") and row.get("turn_index") != 0 for row in valid_rows
     )
+    final_instant_recovered = bool(final.get("instant_recovered", False))
+    final_instant_threshold_crossed = bool(final.get("instant_threshold_crossed", False))
+    recovered_finally = final_instant_recovered
+    relapsed_after_recovery = bool(regime["recovery_observed"] and final_instant_threshold_crossed)
+    pulsation_subtype = pulsation_subtype_from_state(
+        regime["regime_label"],
+        bool(regime["recovery_observed"]),
+        final_instant_recovered,
+        final_instant_threshold_crossed,
+    )
     return {
         "substrate_blind": True,
         "material_cost_measured": False,
@@ -628,8 +657,11 @@ def measure(
         "final_threshold_crossed": bool(final.get("threshold_crossed", False)),
         "xi_exceeds_theta": trajectory_xi_exceeds_theta,
         "final_xi_exceeds_theta": bool(final.get("xi_exceeds_theta", False)),
-        "final_instant_threshold_crossed": bool(final.get("instant_threshold_crossed", False)),
-        "final_instant_recovered": bool(final.get("instant_recovered", False)),
+        "final_instant_threshold_crossed": final_instant_threshold_crossed,
+        "final_instant_recovered": final_instant_recovered,
+        "recovered_finally": recovered_finally,
+        "relapsed_after_recovery": relapsed_after_recovery,
+        "pulsation_subtype": pulsation_subtype,
         "boundary_side": final.get("boundary_side"),
         "boundary_pressure": final.get("boundary_pressure"),
         "viability_status": final.get("viability_status", "UNRESOLVED"),

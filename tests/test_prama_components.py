@@ -393,30 +393,32 @@ class TestPramaComponents(unittest.TestCase):
         self.assertEqual(result["trajectory_assessment"], "THRESHOLD_CROSSED_STRUCTURAL_PULSATION")
         self.assertTrue(result["recovery_observed"])
         self.assertTrue(result["post_crossing_recovery_turns"])
+        self.assertTrue(result["recovered_finally"])
+        self.assertFalse(result["relapsed_after_recovery"])
+        self.assertEqual(result["pulsation_subtype"], "RECOVERED_FINAL")
 
-    def test_accumulated_debt_with_instant_recovery_is_structural_pulsation(self):
+    def test_structural_pulsation_with_final_relapse_reports_subtype(self):
         result = measure(
             [turn(0, [-0.8, -1.2])]
-            + [turn(index, [-0.1, -2.1]) for index in range(1, 5)]
-            + [turn(index, [-0.8, -1.2]) for index in range(5, 14)],
+            + [turn(index, [-0.1, -2.1]) for index in range(1, 3)]
+            + [turn(index, [-0.8, -1.2]) for index in range(3, 10)]
+            + [turn(index, [-0.1, -2.1]) for index in range(10, 14)],
             calib_window=1,
             crossing_index_scope="token_window",
         )
-        recovered_after_accumulated_crossing = [
-            row
-            for row in result["turns"]
-            if row["turn_index"] > result["first_crossing_turn"]
-            and row["threshold_crossed"]
-            and row["instant_recovered"]
-        ]
 
         self.assertEqual(result["regime_label"], "III_STRUCTURAL_PULSATION")
-        self.assertTrue(result["threshold_crossed"])
-        self.assertTrue(recovered_after_accumulated_crossing)
         self.assertTrue(result["recovery_observed"])
-        self.assertTrue(result["post_crossing_recovery_turns"])
-        self.assertLess(result["persistent_crossing_ratio"], 0.80)
-        self.assertGreater(result["final_instant_viability_margin"], 0.0)
+        self.assertFalse(result["recovered_finally"])
+        self.assertTrue(result["relapsed_after_recovery"])
+        self.assertEqual(result["pulsation_subtype"], "RELAPSED_AFTER_RECOVERY")
+
+    def test_non_pulsation_has_no_pulsation_subtype(self):
+        result = measure([turn(index, [-0.8, -1.2]) for index in range(12)], calib_window=1)
+
+        self.assertNotEqual(result["regime_label"], "III_STRUCTURAL_PULSATION")
+        self.assertIsNone(result["pulsation_subtype"])
+        self.assertFalse(result["relapsed_after_recovery"])
 
     def test_low_activity_low_raw_acople_can_be_subcritical_dissolution(self):
         low_activity_turns = [
