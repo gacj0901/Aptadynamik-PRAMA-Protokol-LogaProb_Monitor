@@ -72,6 +72,10 @@ class TurnReading:
     lambda_remaining: Optional[float]
     theta_dynamic: Optional[float]
     viability_margin: Optional[float]
+    accumulated_viability_margin: Optional[float]
+    instant_viability_margin: Optional[float]
+    instant_threshold_crossed: bool
+    instant_recovered: bool
     compression_gap: Optional[float]
     distance_to_threshold: Optional[float]
     xi_exceeds_theta: bool
@@ -326,7 +330,7 @@ def classify_regime(
             )
         )
 
-    final_margin = valid_turns[-1].get("viability_margin")
+    final_instant_margin = valid_turns[-1].get("instant_viability_margin")
     avg_activity_effective = mean(float(turn.get("activity_effective") or 0.0) for turn in valid_turns)
     avg_acople_raw = mean(float(turn.get("acople") or 0.0) for turn in valid_turns)
 
@@ -366,13 +370,12 @@ def classify_regime(
         turn
         for turn in valid_turns
         if turn["turn_index"] > first_crossing_turn
-        and not bool(turn.get("xi_exceeds_theta"))
-        and (turn.get("viability_margin") is not None and float(turn["viability_margin"]) > 0.0)
+        and bool(turn.get("instant_recovered"))
     ]
     post_crossing_recovery_turns = [int(turn["turn_index"]) for turn in post_recovery]
     recovery_observed = bool(post_crossing_recovery_turns)
     persistent_crossing_ratio = (
-        sum(1 for turn in post_crossing if turn.get("threshold_crossed")) / len(post_crossing)
+        sum(1 for turn in post_crossing if turn.get("instant_threshold_crossed")) / len(post_crossing)
         if post_crossing
         else 0.0
     )
@@ -380,7 +383,11 @@ def classify_regime(
     if recovery_observed:
         label = "III_STRUCTURAL_PULSATION"
         description = "threshold crossing followed by recovery; trajectory operates as bounded structural pulsation"
-    elif persistent_crossing_ratio >= 0.80 and final_margin is not None and float(final_margin) < 0.0:
+    elif (
+        persistent_crossing_ratio >= 0.80
+        and final_instant_margin is not None
+        and float(final_instant_margin) <= 0.0
+    ):
         label = "IV_ENTROPIC_COLLAPSE"
         description = "persistent threshold crossing without observed recovery; terminal drift is operationally indicated"
     else:
@@ -471,6 +478,10 @@ def measure(
                         lambda_remaining=None,
                         theta_dynamic=None,
                         viability_margin=None,
+                        accumulated_viability_margin=None,
+                        instant_viability_margin=None,
+                        instant_threshold_crossed=False,
+                        instant_recovered=False,
                         compression_gap=None,
                         distance_to_threshold=None,
                         xi_exceeds_theta=False,
@@ -505,6 +516,9 @@ def measure(
         lambda_remaining = clamp01(lambda0 * (1.0 - xi_norm))
         theta_dynamic = float(theta0) * lambda_remaining
         viability_margin = theta_dynamic - xi_norm
+        instant_viability_margin = theta_dynamic - delta_instant
+        instant_threshold_crossed = delta_instant > theta_dynamic
+        instant_recovered = instant_viability_margin > 0.0
         xi_exceeds_theta = xi_norm >= theta_dynamic
         threshold_crossed = idx > 0 and xi_exceeds_theta
         status = viability_status(viability_margin, critical_margin)
@@ -545,6 +559,10 @@ def measure(
                     lambda_remaining=lambda_remaining,
                     theta_dynamic=theta_dynamic,
                     viability_margin=viability_margin,
+                    accumulated_viability_margin=viability_margin,
+                    instant_viability_margin=instant_viability_margin,
+                    instant_threshold_crossed=instant_threshold_crossed,
+                    instant_recovered=instant_recovered,
                     compression_gap=None,
                     distance_to_threshold=viability_margin,
                     xi_exceeds_theta=xi_exceeds_theta,
@@ -602,12 +620,16 @@ def measure(
         "micro_scale_definition": "micro_raw is unbounded surprise amplitude; micro_health is centered on baseline_micro.",
         "final_viability": final.get("viability_margin"),
         "min_viability": min(margins) if margins else None,
+        "final_accumulated_viability_margin": final.get("accumulated_viability_margin"),
+        "final_instant_viability_margin": final.get("instant_viability_margin"),
         "final_distance_to_threshold": final.get("viability_margin"),
         "min_distance_to_threshold": min(margins) if margins else None,
         "threshold_crossed": trajectory_threshold_crossed,
         "final_threshold_crossed": bool(final.get("threshold_crossed", False)),
         "xi_exceeds_theta": trajectory_xi_exceeds_theta,
         "final_xi_exceeds_theta": bool(final.get("xi_exceeds_theta", False)),
+        "final_instant_threshold_crossed": bool(final.get("instant_threshold_crossed", False)),
+        "final_instant_recovered": bool(final.get("instant_recovered", False)),
         "boundary_side": final.get("boundary_side"),
         "boundary_pressure": final.get("boundary_pressure"),
         "viability_status": final.get("viability_status", "UNRESOLVED"),
