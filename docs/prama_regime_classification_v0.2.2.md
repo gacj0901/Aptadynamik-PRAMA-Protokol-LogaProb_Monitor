@@ -2,7 +2,9 @@
 
 ## 1. Purpose
 
-PRAMA Components v0.2.2 separates threshold crossing from terminal collapse.
+PRAMA Protokol Core v0.2.2 separates threshold crossing from terminal collapse.
+
+PRAMA Components is retained as a legacy name for the pre-split implementation. The canonical architecture separates PRAMA Protokol Core from PRAMA ProbLog Components.
 
 In this version, `threshold_crossed` does not automatically mean collapse. It means loss of point-regime viability: the trajectory no longer satisfies the operational viability condition at that point in the run. A trajectory can cross the threshold and later recover, alternate around the threshold, or remain persistently beyond it.
 
@@ -30,7 +32,7 @@ The crossing criterion is:
 Ξ(t) > Θ(λ(t))
 ```
 
-Here, `Θ(λ)` is the dynamic threshold modulated by remaining permissivity `λ`. In PRAMA Components, `viability_margin` is the signed operational margin between the dynamic threshold and normalized accumulated stress. A positive margin indicates that the point-regime condition is still satisfied. A negative margin indicates that the trajectory has crossed the point-regime threshold.
+Here, `Θ(λ)` is the dynamic threshold modulated by remaining permissivity `λ`. In PRAMA Protokol Core, `viability_margin` is the signed operational margin between the dynamic threshold and normalized accumulated stress. A positive margin indicates that the point-regime condition is still satisfied. A negative margin indicates that the trajectory has crossed the point-regime threshold.
 
 This crossing indicates loss of fixed-point viability. It does not, by itself, imply annihilation of the system, semantic failure, or terminal collapse.
 
@@ -104,11 +106,11 @@ This branch is intentionally conservative so isolated ACKs, short replies, or tr
 
 The mathematical Aptadynamik treatment may use local stability conditions such as `p > 0`, `r > 0`, and `pq < r` to characterize pulsation in a formal dynamical analysis.
 
-The current PRAMA Components runner does not calculate `p`, `q`, or `r`. It does not infer a formal local Jacobian, and it does not assert a mathematical Hopf bifurcation.
+The current PRAMA ProbLog Components runner does not calculate `p`, `q`, or `r`. It does not infer a formal local Jacobian, and it does not assert a mathematical Hopf bifurcation.
 
-Instead, PRAMA Components v0.2.2 implements an operational analogy: loss of point-regime viability with observed recovery or alternation around the threshold is classified as structural pulsation.
+Instead, PRAMA Protokol Core v0.2.2 implements an operational analogy: loss of point-regime viability with observed recovery or alternation around the threshold is classified as structural pulsation.
 
-PRAMA Components v0.2.2 does not prove a Hopf bifurcation; it detects a trajectory pattern operationally compatible with structural pulsation.
+PRAMA Protokol Core v0.2.2 does not prove a Hopf bifurcation; it detects a trajectory pattern operationally compatible with structural pulsation.
 
 ## 6. Parametric Sensitivity Result
 
@@ -138,13 +140,13 @@ The robust consensus fields were:
 
 The first crossing occurred mostly at turn `2`. Under the most permissive tested threshold, `theta0 = 1.0`, the first crossing shifted to turn `4`.
 
-Interpretation: the session is not in organized equilibrium under the tested parameter combinations, because every run includes a formal threshold crossing. However, the session also does not show robust terminal collapse. The robust diagnosis is structural pulsation: the trajectory crosses the point-regime threshold but shows recovery or bounded alternation in most tested configurations.
+Interpretation: the session is not in organized stability under the tested parameter combinations, because every run includes a formal threshold crossing. However, the session also does not show robust terminal collapse. The robust diagnosis is structural pulsation: the trajectory crosses the point-regime threshold but shows recovery or bounded alternation in most tested configurations.
 
 ## 7. Methodological Limitation
 
 This classification is structural-generative. It is not a semantic failure classifier.
 
-PRAMA Components v0.2.2 does not measure:
+PRAMA ProbLog Components v0.2.2 does not measure:
 
 - semantic truth
 - intention
@@ -164,4 +166,4 @@ The regime layer should therefore be read as an operational classification over 
 
 v0.2.1 corrected the ACK/activity artifact. In that version, raw activity is separated from structural activity so that acknowledgements or low-activity turns do not inject artificial accumulated stress.
 
-v0.2.2 adds aptadynamic regime classification and parametric sensitivity. It distinguishes loss of point-regime viability from terminal collapse and reports whether the observed trajectory is better described as organized equilibrium, subcritical dissolution, structural pulsation, or entropic collapse.
+v0.2.2 adds aptadynamic regime classification and parametric sensitivity. It distinguishes loss of point-regime viability from terminal collapse and reports whether the observed trajectory is better described as organized stability, subcritical dissolution, structural pulsation, or entropic collapse.

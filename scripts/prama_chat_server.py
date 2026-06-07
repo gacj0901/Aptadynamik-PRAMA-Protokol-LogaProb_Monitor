@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
-from aptadynamik.prama_components import measure
+from aptadynamik.prama_problog_components import measure
 from aptadynamik.observer.report_writer import ReportWriter
 from aptadynamik.observer.session_recorder import SessionRecorder
 
@@ -201,7 +201,7 @@ def compute_live_prama_events(tokens: List[Dict], turn_index: int, window_size: 
                 "micro": micro_health,
                 "macro": macro_health,
                 "viability": viability_margin,
-                # Legacy visual fallback; PRAMA Components v0.2.2 core does not compute these observer metrics.
+                # Legacy visual fallback; PRAMA Protokol Core v0.2.2 does not compute these observer metrics.
                 "rig": 0.0,
                 "eco": 0.0,
                 "alu": 0.0,
@@ -381,7 +381,7 @@ def chat(request: ChatRequest):
                     "macro_health": None,
                     "acople": None,
                     "micro_drop": None,
-                    # Legacy visual fallback; PRAMA Components v0.2.2 core does not compute these observer metrics.
+                    # Legacy visual fallback; PRAMA Protokol Core v0.2.2 does not compute these observer metrics.
                     "rig": 0.0,
                     "eco": 0.0,
                     "alu": 0.0,

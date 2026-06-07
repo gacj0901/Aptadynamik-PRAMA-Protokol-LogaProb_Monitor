@@ -12,7 +12,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import run_regime_benchmark as benchmark  # noqa: E402
-from aptadynamik.prama_components import (  # noqa: E402
+from aptadynamik.prama_protokol_core import (  # noqa: E402
     normalize_regime_label,
     normalize_trajectory_assessment,
 )

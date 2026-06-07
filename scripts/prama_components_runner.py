@@ -8,14 +8,16 @@ from itertools import product
 from pathlib import Path
 from typing import Any, Dict, Sequence
 
-from aptadynamik.prama_components import (
+from aptadynamik.prama_problog_components import (
     COHERENCE_VIABILITY_NOTE,
-    DEFAULT_LAMBDA0,
-    DEFAULT_MEMORY_BETA,
-    DEFAULT_THETA0,
     ECHO_NOTE,
     SUBSTRATE_BLIND_WARNING,
     measure,
+)
+from aptadynamik.prama_protokol_core import (
+    DEFAULT_LAMBDA0,
+    DEFAULT_MEMORY_BETA,
+    DEFAULT_THETA0,
 )
 
 
@@ -227,7 +229,7 @@ def calibration_sensitivity_report(payload: Dict[str, Any], raw_path: Path) -> s
     ]
     return "\n".join(
         [
-            "# PRAMA Components Calibration Sensitivity",
+            "# PRAMA ProbLog Components Calibration Sensitivity",
             "",
             "## Scope",
             "",
@@ -358,7 +360,7 @@ def parametric_sensitivity_report(payload: Dict[str, Any], raw_path: Path) -> st
     ]
     return "\n".join(
         [
-            "# PRAMA Components Parametric Sensitivity",
+            "# PRAMA ProbLog Components Parametric Sensitivity",
             "",
             "## Scope",
             "",
@@ -443,7 +445,7 @@ def report_text(
         ]
     return "\n".join(
         [
-            "# PRAMA Components Report",
+            "# PRAMA ProbLog Components Report",
             "",
             "## Trajectory Viability",
             "",
@@ -492,7 +494,7 @@ def report_text(
             "Layer 3 — Material cost: energy, GPU, memory, latency, heat, cooling, infrastructure telemetry.",
             "Layer 3 cannot be inferred from Layer 1.",
             "",
-            "PRAMA Components is not a failure classifier. It is a trajectory dynamic-viability meter.",
+            "PRAMA ProbLog Components is not a failure classifier. It is a trajectory dynamic-viability meter.",
             "Its object is acople between viable micro-amplitude and macro continuity.",
             "Viability expresses distance to the threshold where the trajectory stops sustaining continuity and amplitude at the same time.",
             "",

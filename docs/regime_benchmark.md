@@ -2,15 +2,17 @@
 
 ## Purpose
 
-This benchmark generates deterministic synthetic trajectories for PRAMA Components. It provides controlled evidence for the aptadynamic regime classifier without depending on live model output, API availability, prompt behavior, or sampling variance.
+This benchmark generates deterministic synthetic trajectories for PRAMA ProbLog Components. It provides controlled evidence for the aptadynamic regime classifier without depending on live model output, API availability, prompt behavior, or sampling variance.
 
-The benchmark uses `src/aptadynamik/prama_components.py::measure` directly. It does not replace live monitoring; it validates that the regime layer behaves consistently under known trajectory patterns.
+The benchmark uses `src/aptadynamik/prama_problog_components.py::measure` directly. It does not replace live monitoring; it validates that the regime layer behaves consistently under known trajectory patterns.
+
+PRAMA Components is retained as a legacy name for the pre-split implementation. The canonical architecture separates PRAMA Protokol Core from PRAMA ProbLog Components.
 
 ## Local Threshold Crossing vs Trajectory Regime
 
 A threshold crossing is a local viability event. It means a window or turn exceeded the current dynamic viability threshold.
 
-A regime classification is a trajectory diagnosis. It requires enough valid history to distinguish an isolated local event from persistent drift, bounded recovery, or organized equilibrium.
+A regime classification is a trajectory diagnosis. It requires enough valid history to distinguish an isolated local event from persistent drift, bounded recovery, or organized stability.
 
 This distinction is essential because a short response can show local crossings without providing enough evidence for terminal collapse.
 

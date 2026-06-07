@@ -6,11 +6,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from aptadynamik.prama_components import (
+from aptadynamik.prama_problog_components import (
     SUBSTRATE_BLIND_WARNING,
     centered_health,
-    collapse_xi_norm,
     measure,
+)
+from aptadynamik.prama_protokol_core import (
+    collapse_xi_norm,
     normalize_regime_label,
     normalize_trajectory_assessment,
 )

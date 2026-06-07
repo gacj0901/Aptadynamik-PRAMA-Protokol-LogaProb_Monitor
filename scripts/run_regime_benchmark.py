@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
 
-from aptadynamik.prama_components import measure
+from aptadynamik.prama_problog_components import measure
 
 
 BENCHMARK_VERSION = "0.1.0"

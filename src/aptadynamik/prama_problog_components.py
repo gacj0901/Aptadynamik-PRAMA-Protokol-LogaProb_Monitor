@@ -462,7 +462,7 @@ def demo() -> None:
         {"turn_index": 2, "tokens": [{"top1_logprob": -0.2}, {"top1_logprob": -1.8}], "activity": 1.0},
     ]
     result = measure(turns, calib_window=1)
-    print("PRAMA Components v0.2.1 demo")
+    print("PRAMA ProbLog Components v0.2.1 demo")
     print("collapse_xi_norm(theta0, lambda0) = (theta0 * lambda0) / (1 + theta0 * lambda0)")
     print("with lambda0 = 1, this reduces to theta0 / (1 + theta0)")
     print(f"collapse_xi_norm(0.35, 1.0) = {collapse_xi_norm(0.35, 1.0):.6f}")
