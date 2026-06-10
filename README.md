@@ -59,3 +59,9 @@ The Gemini pipeline writes timestamped JSON and CSV outputs to `results/`.
 - `docs/failure_modes.md`
 - `docs/philosophy.md`
 
+- License
+
+This project is released under the GNU Affero General Public License v3.0 (AGPL-3.0).
+
+Commercial licensing and research collaborations may be available separately.
+
