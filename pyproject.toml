@@ -15,7 +15,7 @@ dependencies = []
 gemini = ["google-genai>=1.0.0"]
 dev = ["pytest>=8.0.0"]
 openai = ["openai"]
-
+server = ["fastapi", "uvicorn"]
 [project.scripts]
 prama-verify = "aptadynamik.verification.scenarios:main"
 prama-gemini = "aptadynamik.pipelines.gemini:main"
@@ -27,3 +27,4 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+

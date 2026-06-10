@@ -6,6 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pytest
+pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
 from aptadynamik.observer.report_writer import ReportWriter, sanitize_model_id
@@ -299,3 +301,4 @@ class TestPramaChatServerPayload(unittest.TestCase):
         self.assertIn("regime_label", final)
         self.assertIsNone(final["regime_label"])
         self.assertEqual(final["boundary_side"], "UNRESOLVED")
+
