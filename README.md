@@ -1,7 +1,5 @@
 # AptadynamiK - PRAMA Protokol: ProbLog Monitor
-// G.A.C.J. 
-// Copyright © 2026 — Trade Secret registered with U.S. Copyright Office
-
+// Copyright © 2026 G.A.C.J.  Released under AGPL -3.0
 
 PRAMA Protokol monitors the structural viability of LLM generation trajectories from token-level uncertainty signals. It maps local generation signals such as logprob gaps and entropy into the PRAMA core state, then records trajectory variables including integrity, xi, lambda, regime, and anomaly index.
 
