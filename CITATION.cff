@@ -22,11 +22,4 @@ keywords:
   - viability theory
   - dynamical systems
   - AI safety
-references:
-  - type: report
-    title: "Aptadinamia — Corpus Lógico-Matemático"
-    authors:
-      - family-names: "Chávez Juárez"
-        given-names: "Gerardo Azahel"
-    doi: "10.5281/zenodo.20369325"
-    year: 2026
+

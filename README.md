@@ -2,13 +2,7 @@
 // G.A.C.J.
 // Copyright © 2026 G.A.C.J.  Released under AGPL -3.0
 
-PRAMA Protokol monitors the structural viability of LLM generation trajectories from token-level uncertainty signals. It maps local generation signals such as logprob gaps and entropy into the PRAMA core state, then records trajectory variables including integrity, xi, lambda, regime, and anomaly index.
-
-<!-- ============================================================
-  DRAFT: "Findings so far" section for README.md
-  Suggested placement: immediately after the opening paragraph,
-  before "Install".
-  ============================================================ -->
+PRAMA Protokol monitors the **structural viability of LLM generation trajectories** from token-level uncertainty signals (logprob gaps, entropy, intra-window variance). It maps local generation geometry into a dynamic core with memory — tension Ξ, permissivity λ, a contracting viability threshold Θ(λ), and regime classification — so that risk is assessed at the level of the **trajectory**, not of isolated events. Developed as the measurement layer of the Aptadynamics framework; see also [ORDSPOC](https://github.com/gacj0901/prama-protokol-ordspoc), a companion proof-of-concept applying the same core to autonomous-orchestration risk.
 
 ## Findings so far
 
@@ -32,19 +26,6 @@ Across 50 neutral topics and 150 long trajectories, with three memory kernels (�
 Ψ does not induce a homogeneous Ξ response: the *type* of pressure determines the regime. This dissociation is invisible to event counting and is the core claim of trajectory-level structural monitoring. ([Result 007](docs/empirical_result_007.md))
 
 **Status.** These results come from gpt-4o-mini, DeepSeek and Gemini pipelines at modest scale. They establish internal consistency and a reproducible dissociation between pressure types; they do **not** constitute calibrated risk scores. Known operational limits are listed in [`docs/failure_modes.md`](docs/failure_modes.md). Short trajectories are protected from terminal-regime false positives by the `CALIBRATING / INSUFFICIENT_HISTORY` guard, validated in [`docs/regime_benchmark.md`](docs/regime_benchmark.md).
-
-<!-- ============================================================
-  OPTIONAL: suggested replacement for the README opening paragraph
-  ============================================================ -->
-
-> PRAMA Protokol monitors the **structural viability of LLM generation trajectories** from token-level uncertainty signals (logprob gaps, entropy, intra-window variance). It maps local generation geometry into a dynamic core with memory — tension Ξ, permissivity λ, a contracting viability threshold Θ(λ), and regime classification — so that risk is assessed at the level of the **trajectory**, not of isolated events. Developed as the measurement layer of the Aptadynamics framework ([formal corpus](https://doi.org/10.5281/zenodo.20369325)); see also [ORDSPOC](https://github.com/gacj0901/prama-protokol-ordspoc), a companion proof-of-concept applying the same core to autonomous-orchestration risk.
-
-<!-- ============================================================
-  Suggested GitHub repo topics (Settings → Topics):
-  llm-monitoring · interpretability · logprobs · ai-safety ·
-  uncertainty-quantification · dynamical-systems · viability-theory ·
-  llm-evaluation · trajectory-analysis
-  ============================================================ -->
 
 This repository is organized as a Python package under `src/aptadynamik`.
 
@@ -117,4 +98,5 @@ python scripts\prama_components_runner.py --from-raw results\deepseek_smoke\raw.
 This project is released under the GNU Affero General Public License v3.0 (AGPL-3.0).
 
 Commercial licensing and research collaborations may be available separately.
+
 
