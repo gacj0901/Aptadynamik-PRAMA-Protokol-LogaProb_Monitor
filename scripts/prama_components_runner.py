@@ -153,11 +153,13 @@ def calibration_sensitivity_payload(
 ) -> Dict[str, Any]:
     per_window = []
     for window in windows:
+        effective_window = max(1, min(int(window), len(turns)))
         result = measure(turns, calib_window=window, theta0=theta0, lambda0=lambda0, memory_beta=memory_beta)
         summary = summary_payload(result)
         per_window.append(
             {
                 "calib_window": window,
+                "effective_calib_window": effective_window,
                 "baseline_micro": summary["baseline_micro"],
                 "final_viability": summary["final_viability"],
                 "final_distance_to_threshold": summary["final_distance_to_threshold"],
@@ -179,7 +181,17 @@ def calibration_sensitivity_payload(
     critical_turn_counts = dict(Counter(critical_turn_values))
     critical_turn_consensus = consensus(critical_turn_values)
 
-    if threshold_rate == 1.0:
+    effective_windows = [row["effective_calib_window"] for row in per_window]
+    effective_windows_distinct = len(set(effective_windows))
+    windows_degenerate = len(per_window) > 1 and effective_windows_distinct <= 1
+
+    if windows_degenerate:
+        # All requested windows clamp to the same effective window (trajectory
+        # shorter than the smallest window). The per-window runs are then the
+        # same computation repeated; agreement among them is not evidence of
+        # robustness and no stability verdict can be issued.
+        crossing_stability = "NOT_EVALUABLE_DEGENERATE_WINDOWS"
+    elif threshold_rate == 1.0:
         crossing_stability = "STABLE_CROSSED"
     elif threshold_rate == 0.0:
         crossing_stability = "STABLE_NOT_CROSSED"
@@ -194,6 +206,9 @@ def calibration_sensitivity_payload(
         "material_cost_measured": False,
         "requires_exogenous_telemetry_for_material_cost": True,
         "windows": list(windows),
+        "effective_windows": effective_windows,
+        "effective_windows_distinct": effective_windows_distinct,
+        "windows_degenerate": windows_degenerate,
         "theta0": theta0,
         "lambda0": lambda0,
         "memory_beta": memory_beta,
@@ -217,7 +232,7 @@ def calibration_sensitivity_payload(
 def calibration_sensitivity_report(payload: Dict[str, Any], raw_path: Path) -> str:
     per_window_lines = [
         (
-            f"- window `{row['calib_window']}`: baseline_micro `{row['baseline_micro']}`, "
+            f"- window `{row['calib_window']}` (effective `{row.get('effective_calib_window', row['calib_window'])}`): baseline_micro `{row['baseline_micro']}`, "
             f"final_viability `{row['final_viability']}`, "
             f"final_distance_to_threshold `{row['final_distance_to_threshold']}`, "
             f"threshold_crossed `{row['threshold_crossed']}`, "
@@ -241,10 +256,24 @@ def calibration_sensitivity_report(payload: Dict[str, Any], raw_path: Path) -> s
             "This sensitivity report reruns the same trajectory with multiple calibration windows. It does not change the underlying component calculations.",
             "",
             "Sensitivity does not change the detected exhaustion boundary when boundary_side_consensus is stable. It distinguishes qualitative robustness of the exhaustion boundary from binary sensitivity of the exact threshold crossing.",
+            ""
+            if not payload.get("windows_degenerate")
+            else "",
+            ""
+            if not payload.get("windows_degenerate")
+            else (
+                "WARNING: all requested calibration windows clamp to the same effective "
+                "window because the trajectory is shorter than the smallest window. The "
+                "per-window runs are the same computation repeated; agreement among them "
+                "is NOT evidence of robustness. crossing_stability is reported as "
+                "NOT_EVALUABLE_DEGENERATE_WINDOWS."
+            ),
             "",
             "## Aggregate",
             "",
             f"- windows: `{payload['windows']}`",
+            f"- effective_windows: `{payload.get('effective_windows')}`",
+            f"- windows_degenerate: `{payload.get('windows_degenerate')}`",
             f"- final_viability_min: `{payload['final_viability_min']}`",
             f"- final_viability_max: `{payload['final_viability_max']}`",
             f"- final_viability_range: `{payload['final_viability_range']}`",

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import asdict, dataclass
-from statistics import mean
+from statistics import mean, median
 from typing import Any, Dict, List, Optional, Sequence
 
 from aptadynamik.prama_protokol_core import (
@@ -115,10 +115,59 @@ def centered_health(micro_raw: float, baseline_micro: float) -> float:
 
     Values below and above the baseline are both penalized; the maximum is near
     the baseline. This measures generative geometry, not semantic quality.
+
+    Known limitation (see PATCH_NOTES): this linear form hard-zeros at
+    micro_raw >= 2 * baseline, saturating delta_instant at its maximum and
+    destroying gradation before the dynamic core. It is also asymmetric in
+    ratio space (2x baseline -> 0.0 while 0.5x baseline -> 0.5). Retained as
+    the legacy default for reproducibility of v0.2.x published results.
     """
     baseline = max(float(baseline_micro), 1e-9)
     deviation = abs(float(micro_raw) - baseline) / baseline
     return clamp01(1.0 - deviation)
+
+
+def log_ratio_health(micro_raw: float, baseline_micro: float, scale: float = 1.0) -> float:
+    """Multiplicatively symmetric health on the baseline-relative amplitude ratio.
+
+        health = exp(-|ln(micro_raw / baseline)| / scale)
+
+    Properties (contrast with centered_health):
+    - symmetric in ratio space: health(2*b) == health(b/2). Amplitude is a
+      multiplicative magnitude; equal ratios deserve equal penalty.
+    - never hard-zeros for finite positive amplitude, so delta_instant keeps
+      gradation and the dynamic core receives a gradient, not a clipped step.
+    - scale calibrates tolerance: for r >= 1, health(r * b) = r ** (-1 / scale).
+      With scale = 1.0, a 2x deviation scores 0.5 and a 6.4x deviation scores
+      ~0.156; with the legacy linear form both score exactly 0.0.
+
+    The scale parameter should be anchored on a healthy reference corpus.
+    """
+    baseline = max(float(baseline_micro), 1e-9)
+    value = max(float(micro_raw), 1e-9)
+    s = max(float(scale), 1e-9)
+    return clamp01(math.exp(-abs(math.log(value / baseline)) / s))
+
+
+MICRO_HEALTH_MODES = ("linear", "log_ratio")
+
+
+def micro_health_from_mode(
+    micro_raw: float,
+    baseline_micro: float,
+    mode: str = "linear",
+    scale: float = 1.0,
+) -> float:
+    """Dispatch micro_health computation by mode.
+
+    "linear" is the legacy centered_health (default, preserves v0.2.x outputs).
+    "log_ratio" is the gradation-preserving form recommended going forward.
+    """
+    if mode == "log_ratio":
+        return log_ratio_health(micro_raw, baseline_micro, scale=scale)
+    if mode == "linear":
+        return centered_health(micro_raw, baseline_micro)
+    raise ValueError(f"unknown micro_health_mode: {mode!r}; expected one of {MICRO_HEALTH_MODES}")
 
 
 def macro_continuity(previous_mean_surprise: Optional[float], current_mean_surprise: float) -> float:
@@ -155,7 +204,22 @@ def extract_turn_logprobs_with_counts(turn: Dict[str, Any]) -> Dict[str, Any]:
     return {"logprobs": values, "valid_token_count": len(values), "invalid_token_count": invalid}
 
 
-def baseline_from_turns(turns: Sequence[Dict[str, Any]], calib_window: Optional[int] = None) -> Dict[str, Any]:
+def baseline_from_turns(
+    turns: Sequence[Dict[str, Any]],
+    calib_window: Optional[int] = None,
+    baseline_stat: str = "mean",
+    min_calib_tokens: int = 0,
+) -> Dict[str, Any]:
+    """Compute the frozen micro-amplitude baseline over the calibration window.
+
+    baseline_stat: "mean" (legacy default) or "median" (robust to a single
+    atypical calibration turn).
+    min_calib_tokens: turns with fewer valid tokens are excluded from the
+    calibration set (0 = legacy behavior, no exclusion). Near-deterministic
+    openings (short greetings) compress micro_raw and, if they dominate the
+    baseline, induce spurious micro_excess / DISSOLUTION attribution on every
+    subsequent content turn.
+    """
     if calib_window is not None:
         n_calib = max(1, min(int(calib_window), len(turns)))
         method = "explicit_calib_window"
@@ -165,15 +229,42 @@ def baseline_from_turns(turns: Sequence[Dict[str, Any]], calib_window: Optional[
         method = "first_25_percent_fallback"
         warning = "No --calib-window provided; first 25% of turns used as frozen neutral baseline."
     micros: List[float] = []
+    excluded_short = 0
     for turn in turns[:n_calib]:
         extracted = extract_turn_logprobs_with_counts(turn)
-        if extracted["valid_token_count"] >= 2:
-            micros.append(turn_micro_from_surprises(token_surprise_series(extracted["logprobs"])))
+        if extracted["valid_token_count"] < 2:
+            continue
+        if min_calib_tokens > 0 and extracted["valid_token_count"] < int(min_calib_tokens):
+            excluded_short += 1
+            continue
+        micros.append(turn_micro_from_surprises(token_surprise_series(extracted["logprobs"])))
+    if baseline_stat == "median":
+        baseline_micro = median(micros) if micros else 0.0
+    elif baseline_stat == "mean":
+        baseline_micro = mean(micros) if micros else 0.0
+    else:
+        raise ValueError(f"unknown baseline_stat: {baseline_stat!r}; expected 'mean' or 'median'")
+    warnings: List[str] = [warning] if warning else []
+    if excluded_short:
+        warnings.append(
+            f"{excluded_short} calibration turn(s) excluded for having fewer than "
+            f"{int(min_calib_tokens)} valid tokens."
+        )
+    if len(micros) < 2:
+        warnings.append(
+            "Baseline computed from fewer than 2 contributing turns; a single "
+            "near-deterministic opening can anchor the baseline too low and induce "
+            "spurious micro_excess (DISSOLUTION) attribution on subsequent turns. "
+            "Prefer a wider calibration window or min_calib_tokens > 0."
+        )
     return {
-        "baseline_micro": mean(micros) if micros else 0.0,
+        "baseline_micro": baseline_micro,
         "baseline_n_calib": n_calib,
         "baseline_method": method,
-        "baseline_warning": warning,
+        "baseline_stat": baseline_stat,
+        "baseline_contributing_turns": len(micros),
+        "baseline_excluded_short_turns": excluded_short,
+        "baseline_warning": " ".join(warnings) if warnings else None,
     }
 
 
@@ -202,6 +293,10 @@ def effective_activity(activity_raw: Optional[float], activity_structural: float
 def measure(
     turns: Sequence[Dict[str, Any]],
     calib_window: Optional[int] = None,
+    micro_health_mode: str = "linear",
+    micro_health_scale: float = 1.0,
+    baseline_stat: str = "mean",
+    min_calib_tokens: int = 0,
     theta0: float = DEFAULT_THETA0,
     lambda0: float = DEFAULT_LAMBDA0,
     memory_beta: float = DEFAULT_MEMORY_BETA,
@@ -213,7 +308,12 @@ def measure(
     min_post_crossing_units: int = DEFAULT_MIN_POST_CROSSING_UNITS,
     crossing_index_scope: str = "turn",
 ) -> Dict[str, Any]:
-    baseline = baseline_from_turns(turns, calib_window=calib_window)
+    baseline = baseline_from_turns(
+        turns,
+        calib_window=calib_window,
+        baseline_stat=baseline_stat,
+        min_calib_tokens=min_calib_tokens,
+    )
     baseline_micro = float(baseline["baseline_micro"])
     rows: List[Dict[str, Any]] = []
     previous_mean: Optional[float] = None
@@ -278,7 +378,9 @@ def measure(
         surprises = token_surprise_series(logprobs)
         micro_raw = turn_micro_from_surprises(surprises)
         mean_surprise = turn_mean_surprise(surprises)
-        micro_health_value = centered_health(micro_raw, baseline_micro)
+        micro_health_value = micro_health_from_mode(
+            micro_raw, baseline_micro, mode=micro_health_mode, scale=micro_health_scale
+        )
         macro_health = macro_continuity(previous_mean, mean_surprise)
         acople_raw = min(micro_health_value, macro_health)
         activity_structural = structural_activity(micro_raw, baseline_micro)
@@ -392,7 +494,12 @@ def measure(
         "baseline_micro": baseline_micro,
         "baseline_n_calib": baseline["baseline_n_calib"],
         "baseline_method": baseline["baseline_method"],
+        "baseline_stat": baseline["baseline_stat"],
+        "baseline_contributing_turns": baseline["baseline_contributing_turns"],
+        "baseline_excluded_short_turns": baseline["baseline_excluded_short_turns"],
         "baseline_warning": baseline["baseline_warning"],
+        "micro_health_mode": micro_health_mode,
+        "micro_health_scale": micro_health_scale if micro_health_mode == "log_ratio" else None,
         "theta0": theta0,
         "lambda0": lambda0,
         "memory_beta": memory_beta,
@@ -401,7 +508,11 @@ def measure(
         "valid_turns": len(valid_rows),
         "invalid_turns": len(rows) - len(valid_rows),
         "turns_with_insufficient_data": sum(1 for row in rows if row.get("insufficient_data")),
-        "micro_scale_definition": "micro_raw is unbounded surprise amplitude; micro_health is centered on baseline_micro.",
+        "micro_scale_definition": (
+            "micro_raw is unbounded surprise amplitude; micro_health is centered on baseline_micro."
+            if micro_health_mode == "linear"
+            else "micro_raw is unbounded surprise amplitude; micro_health = exp(-|ln(micro_raw/baseline_micro)|/scale), multiplicatively symmetric and gradation-preserving."
+        ),
         "final_viability": final.get("viability_margin"),
         "min_viability": min(margins) if margins else None,
         "final_accumulated_viability_margin": final.get("accumulated_viability_margin"),
