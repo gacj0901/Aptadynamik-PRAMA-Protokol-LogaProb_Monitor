@@ -1,0 +1,32 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "AptadynamiK — PRAMA Protokol: ProbLog Monitor"
+abstract: >-
+  Structural viability monitoring for LLM generation trajectories using
+  logprob-derived dynamics. Maps token-level uncertainty signals into a
+  dynamic core with memory (tension, permissivity, contracting viability
+  threshold, regime classification) to assess risk at the trajectory level.
+type: software
+authors:
+  - family-names: "Chávez Juárez"
+    given-names: "Gerardo Azahel"
+    orcid: "https://orcid.org/0009-0009-5649-1359"
+repository-code: "https://github.com/gacj0901/Aptadynamik-PRAMA-Protokol-ProbLog_Monitor"
+license: AGPL-3.0
+version: 0.2.2
+date-released: 2026-06-09
+keywords:
+  - LLM monitoring
+  - interpretability
+  - logprobs
+  - viability theory
+  - dynamical systems
+  - AI safety
+references:
+  - type: report
+    title: "Aptadinamia — Corpus Lógico-Matemático"
+    authors:
+      - family-names: "Chávez Juárez"
+        given-names: "Gerardo Azahel"
+    doi: "10.5281/zenodo.20369325"
+    year: 2026

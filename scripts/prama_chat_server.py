@@ -10,10 +10,13 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from aptadynamik.prama_problog_components import measure
+from aptadynamik.pipelines.deepseek import DeepSeekConfig, deepseek_chat_completion, deepseek_response_to_turn
 from aptadynamik.observer.report_writer import ReportWriter
 from aptadynamik.observer.session_recorder import SessionRecorder
 
 MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+DEFAULT_PROVIDER = "openai"
+DEFAULT_DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 TOP_LOGPROBS = int(os.getenv("PRAMA_MONITOR_TOP_LOGPROBS", "5"))
 WINDOW_SIZE = int(os.getenv("PRAMA_MONITOR_WINDOW_SIZE", "16"))
 MAX_TOKENS = int(os.getenv("PRAMA_MONITOR_MAX_TOKENS", "512"))
@@ -37,6 +40,61 @@ class ChatRequest(BaseModel):
 
 class SessionRequest(BaseModel):
     session_id: str
+
+
+class StartSessionRequest(BaseModel):
+    provider: str = DEFAULT_PROVIDER
+    model: Optional[str] = None
+
+
+def normalize_provider(provider: Optional[str]) -> str:
+    value = (provider or DEFAULT_PROVIDER).strip().lower()
+    if value not in {"openai", "deepseek"}:
+        raise HTTPException(status_code=400, detail="provider must be 'openai' or 'deepseek'")
+    return value
+
+
+def default_model_for_provider(provider: str) -> str:
+    return DEFAULT_DEEPSEEK_MODEL if provider == "deepseek" else MODEL
+
+
+def set_session_backend(
+    recorder: SessionRecorder,
+    provider: str = DEFAULT_PROVIDER,
+    requested_model: Optional[str] = None,
+    resolved_model: Optional[str] = None,
+) -> None:
+    normalized = normalize_provider(provider)
+    requested = requested_model or default_model_for_provider(normalized)
+    recorder.provider = normalized
+    recorder.requested_model = requested
+    recorder.resolved_model = resolved_model or getattr(recorder, "resolved_model", None) or requested
+    recorder.model = recorder.resolved_model
+
+
+def normalize_generation_result(recorder: SessionRecorder, result):
+    if len(result) == 4:
+        return result
+    if len(result) == 3:
+        assistant_message, tokens, finish_reason = result
+        return assistant_message, tokens, finish_reason, getattr(recorder, "resolved_model", recorder.model)
+    raise ValueError("Generation backend must return 3 or 4 values.")
+
+
+def session_backend_payload(recorder: SessionRecorder) -> Dict:
+    provider = getattr(recorder, "provider", DEFAULT_PROVIDER)
+    requested_model = getattr(recorder, "requested_model", recorder.model)
+    resolved_model = getattr(recorder, "resolved_model", recorder.model)
+    return {
+        "provider": provider,
+        "requested_model": requested_model,
+        "resolved_model": resolved_model,
+        "model": resolved_model or requested_model,
+    }
+
+
+def live_summary_with_backend(recorder: SessionRecorder) -> Dict:
+    return {**recorder.live_summary(), **session_backend_payload(recorder)}
 
 
 def entropy_from_logprobs(logprobs: List[float]) -> float:
@@ -261,6 +319,83 @@ def prama_state_from_result(result: Dict) -> Dict:
     }
 
 
+def _read_json_file(path: str) -> Dict:
+    target = Path(path)
+    if not target.exists():
+        return {}
+    return json.loads(target.read_text(encoding="utf-8"))
+
+
+def _write_json_file(path: str, payload: Dict) -> None:
+    Path(path).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def augment_report_artifacts(result: Dict, recorder: SessionRecorder) -> None:
+    files = result.get("files", {})
+    backend = session_backend_payload(recorder)
+    raw_path = files.get("raw")
+    if raw_path:
+        raw = _read_json_file(raw_path)
+        raw.update(backend)
+        raw["provider"] = backend["provider"]
+        raw["requested_model"] = backend["requested_model"]
+        raw["resolved_model"] = backend["resolved_model"]
+        _write_json_file(raw_path, raw)
+
+    metadata_path = files.get("metadata")
+    if metadata_path:
+        metadata = _read_json_file(metadata_path)
+        metadata.update(backend)
+        metadata["provider"] = backend["provider"]
+        metadata["requested_model"] = backend["requested_model"]
+        metadata["resolved_model"] = backend["resolved_model"]
+        _write_json_file(metadata_path, metadata)
+
+    summary_path = files.get("summary")
+    if summary_path:
+        import csv
+
+        path = Path(summary_path)
+        if path.exists():
+            with path.open("r", newline="", encoding="utf-8") as handle:
+                rows = list(csv.DictReader(handle))
+            if rows:
+                fieldnames = list(rows[0].keys())
+                for field in ["provider", "requested_model", "resolved_model"]:
+                    if field not in fieldnames:
+                        fieldnames.append(field)
+                for row in rows:
+                    row.update(
+                        {
+                            "provider": backend["provider"],
+                            "requested_model": backend["requested_model"],
+                            "resolved_model": backend["resolved_model"],
+                        }
+                    )
+                with path.open("w", newline="", encoding="utf-8") as handle:
+                    writer = csv.DictWriter(handle, fieldnames=fieldnames)
+                    writer.writeheader()
+                    writer.writerows(rows)
+
+    report_path = files.get("report")
+    if report_path:
+        path = Path(report_path)
+        if path.exists():
+            text = path.read_text(encoding="utf-8")
+            marker = f"- Model: `{recorder.model}`"
+            replacement = "\n".join(
+                [
+                    marker,
+                    f"- Provider: `{backend['provider']}`",
+                    f"- Requested model: `{backend['requested_model']}`",
+                    f"- Resolved model: `{backend['resolved_model']}`",
+                ]
+            )
+            if marker in text and "- Provider:" not in text:
+                text = text.replace(marker, replacement, 1)
+            path.write_text(text, encoding="utf-8")
+
+
 def call_openai(recorder: SessionRecorder, user_message: str):
     from openai import OpenAI
 
@@ -284,7 +419,34 @@ def call_openai(recorder: SessionRecorder, user_message: str):
     choice = response.choices[0]
     assistant_message = choice.message.content or ""
     logprobs_content = choice.logprobs.content if choice.logprobs else []
-    return assistant_message, extract_openai_tokens(logprobs_content), choice.finish_reason
+    resolved_model = getattr(response, "model", recorder.model) or recorder.model
+    return assistant_message, extract_openai_tokens(logprobs_content), choice.finish_reason, resolved_model
+
+
+def call_deepseek(recorder: SessionRecorder, user_message: str):
+    messages = [
+        {
+            "role": "system",
+            "content": "You are a concise assistant. The conversation is monitored locally by PRAMA metrics.",
+        }
+    ]
+    messages.extend(recorder.messages_for_model())
+    messages.append({"role": "user", "content": user_message})
+    config = DeepSeekConfig(
+        model=getattr(recorder, "requested_model", DEFAULT_DEEPSEEK_MODEL),
+        max_tokens=MAX_TOKENS,
+        temperature=0.2,
+        top_logprobs=TOP_LOGPROBS,
+    )
+    try:
+        response = deepseek_chat_completion(messages, config)
+        raw_turn = deepseek_response_to_turn(response, turn_index=len(recorder.turns), user_message=user_message)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    resolved_model = getattr(response, "model", getattr(recorder, "requested_model", DEFAULT_DEEPSEEK_MODEL))
+    return raw_turn["assistant_message"], raw_turn["tokens"], raw_turn.get("finish_reason"), resolved_model
 
 
 def call_dry(recorder: SessionRecorder, user_message: str):
@@ -293,7 +455,7 @@ def call_dry(recorder: SessionRecorder, user_message: str):
         "stand-in answer so PRAMA Monitor can record geometry metrics without an API key. "
         f"Your message was: {user_message}"
     )
-    return assistant_message, synthetic_tokens(assistant_message), "stop"
+    return assistant_message, synthetic_tokens(assistant_message), "stop", getattr(recorder, "resolved_model", recorder.model)
 
 
 def resolve_session(session_id: str) -> SessionRecorder:
@@ -304,10 +466,13 @@ def resolve_session(session_id: str) -> SessionRecorder:
 
 
 @app.post("/session/start")
-def start_session():
-    recorder = SessionRecorder.create(model=MODEL)
+def start_session(request: StartSessionRequest = StartSessionRequest()):
+    provider = normalize_provider(request.provider)
+    requested_model = request.model or default_model_for_provider(provider)
+    recorder = SessionRecorder.create(model=requested_model)
+    set_session_backend(recorder, provider=provider, requested_model=requested_model)
     SESSIONS[recorder.session_id] = recorder
-    return recorder.live_summary()
+    return live_summary_with_backend(recorder)
 
 
 @app.post("/chat")
@@ -316,10 +481,25 @@ def chat(request: ChatRequest):
     if recorder.status != "active":
         raise HTTPException(status_code=400, detail="Session is closed")
 
-    if os.environ.get("OPENAI_API_KEY"):
-        assistant_message, tokens, finish_reason = call_openai(recorder, request.user_message)
+    provider = getattr(recorder, "provider", DEFAULT_PROVIDER)
+    if provider == "deepseek":
+        assistant_message, tokens, finish_reason, resolved_model = normalize_generation_result(
+            recorder, call_deepseek(recorder, request.user_message)
+        )
+    elif os.environ.get("OPENAI_API_KEY"):
+        assistant_message, tokens, finish_reason, resolved_model = normalize_generation_result(
+            recorder, call_openai(recorder, request.user_message)
+        )
     else:
-        assistant_message, tokens, finish_reason = call_dry(recorder, request.user_message)
+        assistant_message, tokens, finish_reason, resolved_model = normalize_generation_result(
+            recorder, call_dry(recorder, request.user_message)
+        )
+    set_session_backend(
+        recorder,
+        provider=provider,
+        requested_model=getattr(recorder, "requested_model", recorder.model),
+        resolved_model=resolved_model,
+    )
     windows = compute_windows(tokens)
     turn = recorder.append_turn(
         request.user_message,
@@ -328,7 +508,7 @@ def chat(request: ChatRequest):
         windows,
         finish_reason=finish_reason,
     )
-    summary = recorder.live_summary()
+    summary = live_summary_with_backend(recorder)
     prama_events = compute_live_prama_events(tokens, turn.get("turn_index", max(summary.get("turn_count", 1) - 1, 0)))
     final_prama = prama_events[-1] if prama_events else {}
     session_prama = compute_session_prama_state(recorder)
@@ -337,7 +517,7 @@ def chat(request: ChatRequest):
     turn["summary"].update(prama_session_state)
     for event in prama_events:
         event.update(prama_session_state)
-    summary_with_prama = {**summary, **prama_session_state}
+    summary_with_prama = {**summary, **prama_session_state, **session_backend_payload(recorder)}
 
     def stream():
         step = 48
@@ -409,7 +589,7 @@ def chat(request: ChatRequest):
 def stop_session(request: SessionRequest):
     recorder = resolve_session(request.session_id)
     recorder.stop()
-    return recorder.live_summary()
+    return live_summary_with_backend(recorder)
 
 
 @app.post("/session/report")
@@ -422,12 +602,13 @@ def session_report(request: SessionRequest):
         top_logprobs=TOP_LOGPROBS,
         window_size=WINDOW_SIZE,
     ).write(recorder)
+    augment_report_artifacts(result, recorder)
     return result
 
 
 @app.get("/session/{session_id}/summary")
 def session_summary(session_id: str):
-    return resolve_session(session_id).live_summary()
+    return live_summary_with_backend(resolve_session(session_id))
 
 
 @app.get("/download")
@@ -445,3 +626,4 @@ def download(path: str = Query(...)):
     if not candidate.exists() or not candidate.is_file():
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(candidate)
+

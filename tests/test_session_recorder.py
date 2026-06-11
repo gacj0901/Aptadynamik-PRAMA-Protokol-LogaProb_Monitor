@@ -221,6 +221,7 @@ class TestPersistentAptadynamicRegime(unittest.TestCase):
 class TestPramaChatServerPayload(unittest.TestCase):
     def setUp(self):
         self.previous_key = os.environ.pop("OPENAI_API_KEY", None)
+        self.previous_deepseek_key = os.environ.pop("DEEPSEEK_API_KEY", None)
         chat_server.SESSIONS.clear()
         self.client = TestClient(chat_server.app)
 
@@ -228,9 +229,11 @@ class TestPramaChatServerPayload(unittest.TestCase):
         chat_server.SESSIONS.clear()
         if self.previous_key is not None:
             os.environ["OPENAI_API_KEY"] = self.previous_key
+        if self.previous_deepseek_key is not None:
+            os.environ["DEEPSEEK_API_KEY"] = self.previous_deepseek_key
 
-    def start_session(self):
-        response = self.client.post("/session/start")
+    def start_session(self, payload=None):
+        response = self.client.post("/session/start", json=payload or {})
         self.assertEqual(response.status_code, 200)
         return response.json()["session_id"]
 
@@ -301,4 +304,80 @@ class TestPramaChatServerPayload(unittest.TestCase):
         self.assertIn("regime_label", final)
         self.assertIsNone(final["regime_label"])
         self.assertEqual(final["boundary_side"], "UNRESOLVED")
+
+    def test_start_session_defaults_to_openai_gpt4o_mini(self):
+        response = self.client.post("/session/start", json={})
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["provider"], "openai")
+        self.assertEqual(payload["requested_model"], "gpt-4o-mini")
+        self.assertEqual(payload["resolved_model"], "gpt-4o-mini")
+        self.assertEqual(payload["model"], "gpt-4o-mini")
+
+    def test_start_session_accepts_deepseek_backend(self):
+        response = self.client.post(
+            "/session/start",
+            json={"provider": "deepseek", "model": "deepseek-chat"},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["provider"], "deepseek")
+        self.assertEqual(payload["requested_model"], "deepseek-chat")
+        self.assertEqual(payload["resolved_model"], "deepseek-chat")
+
+    def test_chat_uses_deepseek_provider_from_session(self):
+        original_call_deepseek = chat_server.call_deepseek
+        calls = []
+
+        def fake_deepseek(recorder, user_message):
+            calls.append((recorder.provider, recorder.requested_model, user_message))
+            return "DeepSeek fixture.", chat_server.synthetic_tokens("DeepSeek fixture."), "stop", "deepseek-v4-flash"
+
+        chat_server.call_deepseek = fake_deepseek
+        try:
+            session_id = self.start_session({"provider": "deepseek", "model": "deepseek-chat"})
+            events = self.chat_events(session_id, "Hello DeepSeek")
+        finally:
+            chat_server.call_deepseek = original_call_deepseek
+
+        self.assertEqual(calls, [("deepseek", "deepseek-chat", "Hello DeepSeek")])
+        summary = [event for event in events if event.get("type") == "turn_summary"][-1]["session"]
+        self.assertEqual(summary["provider"], "deepseek")
+        self.assertEqual(summary["requested_model"], "deepseek-chat")
+        self.assertEqual(summary["resolved_model"], "deepseek-v4-flash")
+        self.assertEqual(summary["model"], "deepseek-v4-flash")
+
+    def test_report_artifacts_include_backend_fields(self):
+        original_call_deepseek = chat_server.call_deepseek
+        original_results_dir = chat_server.RESULTS_DIR
+
+        def fake_deepseek(recorder, user_message):
+            return "DeepSeek fixture.", chat_server.synthetic_tokens("DeepSeek fixture."), "stop", "deepseek-v4-flash"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            chat_server.call_deepseek = fake_deepseek
+            chat_server.RESULTS_DIR = Path(tmp)
+            try:
+                session_id = self.start_session({"provider": "deepseek", "model": "deepseek-chat"})
+                self.chat_events(session_id, "Hello DeepSeek")
+                response = self.client.post("/session/report", json={"session_id": session_id})
+            finally:
+                chat_server.call_deepseek = original_call_deepseek
+                chat_server.RESULTS_DIR = original_results_dir
+
+            self.assertEqual(response.status_code, 200)
+            result = response.json()
+            output_dir = Path(result["output_dir"])
+            raw = json.loads(output_dir.joinpath("raw.json").read_text(encoding="utf-8"))
+            metadata = json.loads(output_dir.joinpath("metadata.json").read_text(encoding="utf-8"))
+            report = output_dir.joinpath("report.md").read_text(encoding="utf-8")
+
+        for payload in [raw, metadata]:
+            self.assertEqual(payload["provider"], "deepseek")
+            self.assertEqual(payload["requested_model"], "deepseek-chat")
+            self.assertEqual(payload["resolved_model"], "deepseek-v4-flash")
+        self.assertIn("Provider: `deepseek`", report)
+        self.assertIn("Requested model: `deepseek-chat`", report)
+        self.assertIn("Resolved model: `deepseek-v4-flash`", report)
+
 

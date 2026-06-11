@@ -130,17 +130,23 @@
     }
 
     .composer {
+      position: relative;
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 96px;
+      grid-template-columns: minmax(280px, 760px) 108px;
+      justify-content: center;
+      align-items: end;
       gap: 10px;
-      padding: 14px;
+      padding: 14px 72px 14px 18px;
       border-top: 1px solid var(--border);
       background: #121419;
     }
 
     textarea {
-      min-height: 72px;
-      resize: vertical;
+      width: 100%;
+      min-height: 46px;
+      max-height: 180px;
+      resize: none;
+      overflow-y: auto;
       color: var(--text);
       background: var(--panel);
       border: 1px solid var(--border);
@@ -162,10 +168,20 @@
     button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
     button:disabled { opacity: .45; cursor: not-allowed; }
 
+    select {
+      width: 100%;
+      color: var(--text);
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 9px 10px;
+      font: 12px var(--mono);
+    }
+
     aside {
       background: var(--panel);
       display: grid;
-      grid-template-rows: auto auto auto auto 1fr auto;
+      grid-template-rows: auto auto auto 1fr auto;
       min-width: 0;
       height: 100vh;
       overflow: hidden;
@@ -191,13 +207,20 @@
       margin-top: 4px;
     }
 
-    .controls, .metrics, .downloads, .prama-live {
+    .controls, .metrics, .prama-live {
       padding: 12px 14px;
       border-bottom: 1px solid var(--border);
     }
 
     .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    .controls button:nth-child(3) { grid-column: span 2; }
+    .controls button:nth-child(5) { grid-column: span 2; }
+
+    .control-field {
+      display: grid;
+      gap: 4px;
+      font: 10px var(--mono);
+      color: var(--muted);
+    }
 
     .metrics {
       display: grid;
@@ -227,7 +250,11 @@
 
     .metric span:last-child {
       color: var(--good);
-      flex: 0 0 auto;
+      flex: 0 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
       text-align: right;
     }
 
@@ -305,7 +332,86 @@
       height: 92px;
     }
 
-    .downloads a {
+    .archive-toggle {
+      position: absolute;
+      right: 16px;
+      bottom: 15px;
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      background: transparent;
+      border: 0;
+      color: var(--text);
+      opacity: .92;
+    }
+
+    .archive-toggle svg {
+      width: 34px;
+      height: 34px;
+      display: block;
+      filter: drop-shadow(0 0 2px rgba(0,0,0,.55));
+    }
+
+    .archive-toggle:hover,
+    .archive-toggle:focus-visible {
+      opacity: 1;
+      outline: none;
+    }
+
+    .archive-toggle::after {
+      content: "Document archive\A Generate";
+      position: absolute;
+      right: 0;
+      bottom: calc(100% + 8px);
+      min-width: 142px;
+      padding: 7px 9px;
+      white-space: pre;
+      color: var(--text);
+      background: #0f1116;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font: 11px/1.35 var(--mono);
+      text-align: left;
+      box-shadow: 0 10px 22px rgba(0,0,0,.32);
+      opacity: 0;
+      transform: translateY(4px);
+      pointer-events: none;
+      transition: opacity .14s ease, transform .14s ease;
+      z-index: 4;
+    }
+
+    .archive-toggle:hover::after,
+    .archive-toggle:focus-visible::after {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .archive-panel {
+      position: absolute;
+      right: 14px;
+      bottom: 64px;
+      width: min(360px, calc(100vw - 32px));
+      max-height: 320px;
+      padding: 12px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 18px 42px rgba(0,0,0,.45);
+      z-index: 3;
+    }
+
+    .archive-panel[hidden] {
+      display: none;
+    }
+
+    .archive-title {
+      margin: 0;
+      font-size: 15px;
+    }
+
+    .archive-panel a {
       display: block;
       color: var(--text);
       text-decoration: none;
@@ -317,17 +423,10 @@
       font-size: 13px;
     }
 
-    .downloads {
-      min-height: 0;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-    }
-
     #links {
       overflow: auto;
       min-height: 0;
-      max-height: 210px;
+      max-height: 224px;
       padding-right: 3px;
     }
 
@@ -340,6 +439,7 @@
     @media (max-width: 880px) {
       body { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
       aside { grid-row: 2; height: auto; max-height: 48vh; overflow: hidden; }
+      .composer { grid-template-columns: minmax(0, 1fr) 88px; padding-right: 66px; }
     }
   </style>
 </head>
@@ -352,6 +452,18 @@
     <section class="composer">
       <textarea id="input" placeholder="Start measurement, then write normally..."></textarea>
       <button class="primary" id="sendBtn" disabled>Send</button>
+      <button class="archive-toggle" id="archiveToggle" type="button" aria-label="Document archive" aria-expanded="false" aria-controls="archivePanel">
+        <svg viewBox="0 0 64 52" aria-hidden="true" focusable="false">
+          <path d="M5 15.5h19.2l5-6.2h13.1l4.8 6.2H59v29.2L5 49.5V15.5Z" fill="#0c0d0f" stroke="#eef0f4" stroke-width="2.6" stroke-linejoin="round"/>
+          <path d="M5 20.7h54L53.7 45.8H5V20.7Z" fill="#17191e" stroke="#eef0f4" stroke-width="2.6" stroke-linejoin="round"/>
+          <path d="M9.8 25.4h43.6" fill="none" stroke="#CAD5E2" stroke-width="1.8" stroke-linecap="round" opacity=".75"/>
+        </svg>
+      </button>
+      <div class="archive-panel" id="archivePanel" hidden>
+        <h1 class="archive-title">Document archive</h1>
+        <div class="sub" style="margin-bottom: 12px;">Generate results to enable links</div>
+        <div id="links"></div>
+      </div>
     </section>
   </main>
 
@@ -365,6 +477,18 @@
     </header>
 
     <section class="controls">
+      <label class="control-field">Provider
+        <select id="providerSelect">
+          <option value="openai">OpenAI</option>
+          <option value="deepseek">DeepSeek</option>
+        </select>
+      </label>
+      <label class="control-field">Model
+        <select id="modelSelect">
+          <option value="gpt-4o-mini" data-provider="openai">gpt-4o-mini</option>
+          <option value="deepseek-chat" data-provider="deepseek">deepseek-chat</option>
+        </select>
+      </label>
       <button id="startBtn">Start Session</button>
       <button id="stopBtn" disabled>Stop Session</button>
       <button id="reportBtn" disabled>Generate Results</button>
@@ -380,6 +504,10 @@
       <div class="metric"><span>Rigidity</span><span id="m_rigidity">0.000</span></div>
       <div class="metric"><span>Uncertainty</span><span id="m_uncertainty">0.000</span></div>
       <div class="metric"><span>Entropy range</span><span id="m_range">0.000</span></div>
+      <div class="metric"><span>Provider</span><span id="m_provider">--</span></div>
+      <div class="metric"><span>Model</span><span id="m_model">--</span></div>
+      <div class="metric"><span>Requested</span><span id="m_requested_model">--</span></div>
+      <div class="metric"><span>Resolved</span><span id="m_resolved_model">--</span></div>
     </section>
 
     <section class="prama-live">
@@ -411,12 +539,6 @@
 
       <svg class="trajectory" id="prama_traj" viewBox="0 0 320 92" preserveAspectRatio="none"></svg>
       <div class="live-note">Live PRAMA visualization displays generative-structure signals from backend metrics. It does not measure material cost.</div>
-    </section>
-
-    <section class="downloads">
-      <h1>Document archive</h1>
-      <div class="sub" style="margin-bottom: 12px;">Generate results to enable links</div>
-      <div id="links"></div>
     </section>
 
     <div class="status" id="status">Ready</div>
@@ -548,6 +670,10 @@
     function updateSummary(summary) {
       $('sessionLine').textContent = summary.session_id ? `Session ${summary.session_id}` : '';
       $('m_status').textContent = summary.status || 'idle';
+      $('m_provider').textContent = summary.provider || '--';
+      $('m_model').textContent = summary.model || '--';
+      $('m_requested_model').textContent = summary.requested_model || summary.model || '--';
+      $('m_resolved_model').textContent = summary.resolved_model || summary.model || '--';
       $('m_turns').textContent = summary.turn_count || 0;
       $('m_tokens').textContent = summary.token_count || 0;
       $('m_windows').textContent = summary.window_count || 0;
@@ -562,6 +688,12 @@
       if (summary.recovery_observed !== undefined) $('prama_recovery').textContent = summary.recovery_observed === null ? '--' : (summary.recovery_observed ? 'YES' : 'NO');
     }
 
+    function resizeInput() {
+      const input = $('input');
+      input.style.height = 'auto';
+      input.style.height = `${Math.min(input.scrollHeight, 180)}px`;
+    }
+
     async function post(path, body = {}) {
       const response = await fetch(`${API}${path}`, {
         method: 'POST',
@@ -572,9 +704,28 @@
       return response;
     }
 
+    function syncModelForProvider() {
+      const provider = $('providerSelect').value;
+      const modelSelect = $('modelSelect');
+      Array.from(modelSelect.options).forEach(option => {
+        option.hidden = option.dataset.provider !== provider;
+      });
+      const selected = modelSelect.options[modelSelect.selectedIndex];
+      if (!selected || selected.dataset.provider !== provider) {
+        const first = Array.from(modelSelect.options).find(option => option.dataset.provider === provider);
+        if (first) modelSelect.value = first.value;
+      }
+    }
+
+    $('providerSelect').addEventListener('change', syncModelForProvider);
+    syncModelForProvider();
+
     $('startBtn').onclick = async () => {
       setStatus('Starting session...');
-      const response = await post('/session/start');
+      const response = await post('/session/start', {
+        provider: $('providerSelect').value,
+        model: $('modelSelect').value,
+      });
       const summary = await response.json();
       sessionId = summary.session_id;
       updateSummary(summary);
@@ -582,6 +733,8 @@
       $('stopBtn').disabled = false;
       $('reportBtn').disabled = false;
       $('startBtn').disabled = true;
+      $('providerSelect').disabled = true;
+      $('modelSelect').disabled = true;
       setStatus('Measurement active');
     };
 
@@ -589,6 +742,7 @@
       const text = $('input').value.trim();
       if (!text || !sessionId) return;
       $('input').value = '';
+      resizeInput();
       addMessage('user', text);
       const assistantSpan = addMessage('assistant', '');
       setStatus('Sending...');
@@ -621,12 +775,38 @@
       }
     });
 
+    $('input').addEventListener('input', resizeInput);
+    resizeInput();
+
+    $('archiveToggle').onclick = event => {
+      event.stopPropagation();
+      const panel = $('archivePanel');
+      panel.hidden = !panel.hidden;
+      $('archiveToggle').setAttribute('aria-expanded', String(!panel.hidden));
+    };
+
+    document.addEventListener('click', event => {
+      const panel = $('archivePanel');
+      if (panel.hidden) return;
+      if (panel.contains(event.target) || $('archiveToggle').contains(event.target)) return;
+      panel.hidden = true;
+      $('archiveToggle').setAttribute('aria-expanded', 'false');
+    });
+
+    document.addEventListener('keydown', event => {
+      if (event.key !== 'Escape') return;
+      $('archivePanel').hidden = true;
+      $('archiveToggle').setAttribute('aria-expanded', 'false');
+    });
+
     $('stopBtn').onclick = async () => {
       if (!sessionId) return;
       const response = await post('/session/stop', { session_id: sessionId });
       updateSummary(await response.json());
       $('sendBtn').disabled = true;
       $('stopBtn').disabled = true;
+      $('providerSelect').disabled = false;
+      $('modelSelect').disabled = false;
       setStatus('Measurement stopped');
     };
 

@@ -88,6 +88,44 @@ Los archivos se crean en `results/`:
 
 Observa `final_integrity`, `final_xi`, `final_lambda`, `final_regime` y la serie por ventanas como senales de viabilidad estructural de la trayectoria generada.
 
+## DeepSeek smoke test
+
+DeepSeek puede generar un `raw.json` compatible con PRAMA ProbLog Components usando el SDK de OpenAI apuntando a `https://api.deepseek.com`.
+
+Windows PowerShell:
+
+```powershell
+$env:DEEPSEEK_API_KEY="..."
+python examples\run_deepseek_demo.py --output-dir results\deepseek_smoke
+python scripts\prama_components_runner.py --from-raw results\deepseek_smoke\raw.json --output-dir results\deepseek_smoke\prama --calib-window 1
+```
+
+El demo usa `deepseek-chat` por defecto y conserva el nombre de modelo resuelto por DeepSeek en `raw.json`.
+
+## Using DeepSeek in the same PRAMA monitor
+
+El servidor del PRAMA Chat Monitor puede iniciar sesiones con OpenAI o DeepSeek sin cambiar de interfaz.
+
+Windows PowerShell:
+
+```powershell
+$env:DEEPSEEK_API_KEY="..."
+python -m uvicorn scripts.prama_chat_server:app --host 127.0.0.1 --port 8000 --reload
+```
+
+Abre `frontend/prama_monitor.html`, selecciona:
+
+- Provider: `DeepSeek`
+- Model: `deepseek-chat`
+
+La sesion guardara:
+
+- `provider`
+- `requested_model`
+- `resolved_model`
+
+Si DeepSeek resuelve internamente otro nombre, por ejemplo `deepseek-v4-flash`, ese valor aparecera como `resolved_model` en la interfaz, `raw.json`, `metadata.json` y `report.md`.
+
 ---
 
 *AptadynamiK - PRAMA Protokol - G.A.C.J. (c) 2026*

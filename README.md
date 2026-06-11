@@ -1,4 +1,5 @@
 # AptadynamiK - PRAMA Protokol: ProbLog Monitor
+// G.A.C.J.
 // Copyright © 2026 G.A.C.J.  Released under AGPL -3.0
 
 PRAMA Protokol monitors the structural viability of LLM generation trajectories from token-level uncertainty signals. It maps local generation signals such as logprob gaps and entropy into the PRAMA core state, then records trajectory variables including integrity, xi, lambda, regime, and anomaly index.
@@ -90,6 +91,18 @@ prama-gemini
 ```
 
 The Gemini pipeline writes timestamped JSON and CSV outputs to `results/`.
+
+## DeepSeek Pipeline
+
+DeepSeek uses the OpenAI SDK with `base_url="https://api.deepseek.com"` and writes a PRAMA-compatible `raw.json`.
+
+PowerShell:
+
+```powershell
+$env:DEEPSEEK_API_KEY="your-key"
+python examples\run_deepseek_demo.py --output-dir results\deepseek_smoke
+python scripts\prama_components_runner.py --from-raw results\deepseek_smoke\raw.json --output-dir results\deepseek_smoke\prama --calib-window 1
+```
 
 ## Documentation
 
