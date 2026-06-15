@@ -6,6 +6,21 @@ Internal regime validation checks whether PRAMA's own structural measurements be
 
 Empirical Result 008 belongs to the second category. It does not treat PRAMA as a semantic hallucination detector. It treats PRAMA as a structural early-warning signal.
 
+
+## Input Validation Before Evaluation
+
+Before running the AUROC/FPR/lead-time evaluator, validate that `labels.csv` matches the selected `raw.json` files:
+
+```powershell
+python scripts\validate_early_warning_inputs.py `
+  --labels labels.csv `
+  --inputs results\session_a\raw.json results\session_b\raw.json `
+  --primary-score boundary_pressure `
+  --output-dir results\early_warning_validation
+```
+
+The validator checks required label fields, duplicate session ids, invalid labels/splits, positive/negative class coverage, train/test split coverage, missing raw files, missing labels for inputs, `event_token` and `event_turn` bounds, missing primary PRAMA score at the causal evaluation row, and missing token payload fields needed by logprob baselines.
+
 ## Why Baselines Are Mandatory
 
 Logprob-derived baselines such as entropy, mean logprob, perplexity, top-1 gap, and entropy variance can themselves predict later failure. A PRAMA score is only informative as an early-warning layer if it adds signal beyond those simpler baselines.
