@@ -1,0 +1,87 @@
+[
+  {
+    "path": "figures/model_comparison_entropy_by_difficulty.png",
+    "sha256": "341130eb6c016c73e278c9599082e86eb986140dab93015d840267236647df79",
+    "size_bytes": 173520
+  },
+  {
+    "path": "figures/model_comparison_viability_margin_by_difficulty.png",
+    "sha256": "757a7ad8837e023c7ab3cb696a0ba682d9edc0ef1cb346e831a0e99b89f1bfdb",
+    "size_bytes": 200475
+  },
+  {
+    "path": "figures/model_comparison_xi_by_difficulty.png",
+    "sha256": "656dd70596a3ab355b898c16cc7e5a0d9e2eedce4d80d47fe97d12c30425b23f",
+    "size_bytes": 196910
+  },
+  {
+    "path": "metrics/deepseek_cocc_prama_window_metrics.csv",
+    "sha256": "4aa83fb021b2710a3862a6d79dcd9e60f2a79bf6f812c6e3fd167ae7d3960db9",
+    "size_bytes": 113330
+  },
+  {
+    "path": "metrics/deepseek_cocc_prama_window_report.md",
+    "sha256": "8f069a263be91db89c08d816b6052bbe211f0eba79287fbfde050865905d57ea",
+    "size_bytes": 5358
+  },
+  {
+    "path": "metrics/deepseek_cocc_prama_window_summary.json",
+    "sha256": "f4bcd434ffa4ed1648f2d1d1db0b63dd2b8a10bf454d708ce36b3c1de33e9cb3",
+    "size_bytes": 3568
+  },
+  {
+    "path": "metrics/gpt41_cocc_prama_window_metrics.csv",
+    "sha256": "e2ef9ac7333b31038b5baeed7acabfc7130a79df50cc808c5df855a80d36428d",
+    "size_bytes": 111172
+  },
+  {
+    "path": "metrics/gpt41_cocc_prama_window_report.md",
+    "sha256": "16140085f4093c87131241a4228d4f50504d7e9b216bc9866065926c72119444",
+    "size_bytes": 5127
+  },
+  {
+    "path": "metrics/gpt41_cocc_prama_window_summary.json",
+    "sha256": "e65529bbb05b512d92f459d7f473eb9103bd25e2eaae64e674107ca5f15e4a80",
+    "size_bytes": 3321
+  },
+  {
+    "path": "README.md",
+    "sha256": "087bdfeed663b108e76e3499a8768c690e453e49c30ec631e499fd0988758279",
+    "size_bytes": 5586
+  },
+  {
+    "path": "reproducibility_manifest.json",
+    "sha256": "fe5c36e42bf5b2e229cf4f185480da0e4ab2ee935aaad013bafeb81df98e6647",
+    "size_bytes": 33243
+  },
+  {
+    "path": "scripts/aggregate_cocc_existing_raw.py",
+    "sha256": "fc9118c5919b4d54a82837e5933ebe6d2c2c18db11284e0c394b2232c1ae44fe",
+    "size_bytes": 10690
+  },
+  {
+    "path": "scripts/analyze_cocc_prama_windows.py",
+    "sha256": "16a46f510b88151e57c28a8c0463b14699fed9603964b4c238bb40f74616aedf",
+    "size_bytes": 14599
+  },
+  {
+    "path": "scripts/build_cocc_prama_dataset.py",
+    "sha256": "e7a7036007a6f9230bc656850ba7c44ba900ccc4ccd1b6800fd50e4c43c4bfa4",
+    "size_bytes": 6541
+  },
+  {
+    "path": "scripts/generate_cocc_publication_figures.py",
+    "sha256": "e3025da86f89d88e677619dcb1325e58aa7629f0c6f7d5905ca1449c86de02e4",
+    "size_bytes": 8711
+  },
+  {
+    "path": "scripts/inspect_cocc_dataset.py",
+    "sha256": "12b4cd439ae37dcaf8b3f53fbe578da31c7c12c912757ac062863d2ac3845527",
+    "size_bytes": 9531
+  },
+  {
+    "path": "scripts/run_break_the_chain_prama_eval.py",
+    "sha256": "ba60631eea950b07803404d3f4758812760d898d08b462c4c04a3dcd881f2e4e",
+    "size_bytes": 18774
+  }
+]

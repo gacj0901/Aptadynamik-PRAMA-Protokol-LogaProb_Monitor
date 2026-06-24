@@ -97,21 +97,8 @@ Reports must include:
 
 This benchmark does not measure semantic truth directly, author judgment, model intention, or material cost. It evaluates whether structural PRAMA scores provide early warning beyond simpler logprob-derived baselines.
 
-## 11. Observed outcome: null not rejected under final-outcome proxy aggregation
+## 11. Current Status
 
-The preliminary LiveCodeBench `code_generation_lite` runs did not reject the null hypothesis.
+ER008 remains a pending external benchmark protocol. No valid Break-The-Chain / Chain-of-Code Collapse result is claimed in this repository.
 
-In the current form, ER008 evaluates association with final functional outcome more than localized early warning. Because `event_token` is the final represented token, lead time is a weak proxy: an alarm can only be interpreted as occurring before the final answer, not before a localized failure event.
-
-Observed outcome:
-
-- PRAMA produced structural signal, especially in `xi_norm`.
-- Simple uncertainty baselines remained stronger controls.
-- OpenAI GPT-4.1 produced a valid LiveCodeBench run with status `negative`.
-- DeepSeek produced convergent but weaker evidence because truncation was elevated.
-
-Implication:
-
-Future claims must beat the strongest entropy/logprob controls, especially `entropy_variance`, `mean_entropy`, and `perplexity`. PRAMA should not be claimed as an external early-warning signal under this protocol unless it outperforms those baselines at matched FPR or achieves stronger lead-time results with localized event tokens.
-
-This observed null does not invalidate PRAMA as a dynamic framework. It limits this application: post-hoc aggregate classification of individual final responses.
+Clean code-generation benchmark runs must not be reported as Break-The-Chain evidence. A future ER008 result requires a benchmark whose ground truth matches the protocol target and whose labels are external to PRAMA.
