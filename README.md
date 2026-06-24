@@ -1,33 +1,109 @@
-# AptadynamiK - PRAMA Protokol: ProbLog Monitor
-// G.A.C.J.
-// Copyright © 2026 G.A.C.J.  Released under AGPL -3.0
+# AptadynamiK / PRAMA Protokol
 
-PRAMA Protokol monitors the **structural viability of LLM generation trajectories** from token-level uncertainty signals (logprob gaps, entropy, intra-window variance). It maps local generation geometry into a dynamic core with memory — tension Ξ, permissivity λ, a contracting viability threshold Θ(λ), and regime classification — so that risk is assessed at the level of the **trajectory**, not of isolated events. Developed as the measurement layer of the Aptadynamics framework; see also [ORDSPOC](https://github.com/gacj0901/prama-protokol-ordspoc), a companion proof-of-concept applying the same core to autonomous-orchestration risk.
+**Structural analysis of LLM generation dynamics via logprob geometry and aptadynamic monitoring.**
 
-## Findings so far
+Copyright © 2026 G.A.C.J. — AGPL-3.0
 
-PRAMA Monitor is developed against explicit hypotheses, and negative results are published alongside positive ones. The numbered reports in `docs/empirical_result_001.md` … `docs/empirical_result_007.md` document the full arc. Summary:
+---
 
-**1. The instrument does not detect hallucination — it detects structural regime.**
-First contact with live logprobs inverted the initial prediction: semantically "clean" prompts accumulated *more* tension Ξ than semantically stressful ones, because high-confidence generation is structurally rigid (low entropy, large top-1 gaps, fewer alternatives). PRAMA measures the probabilistic geometry of a generation trajectory — concentration, rigidity, loss of alternatives, accumulated tension, loss of permissivity — not semantic truth. Structural (aptadynamic) stress and semantic stress are different variables. ([Result 001](docs/empirical_result_001.md))
+## Architecture
 
-**2. The naive operational hypothesis failed at scale — and the failure was diagnostic.**
-With a larger prompt-family sample, the hypothesis "contradiction/saturation ⇒ higher Ξ" scored 0/4 ([Result 003](docs/empirical_result_003.md)). Adding intra-window entropy variance recovered 3/4 ([Result 004](docs/empirical_result_004.md)). The deeper diagnosis: the discriminating signals were being computed *before* the PRAMA dynamics — they were properties of raw logprob geometry, not of the dynamic core — and both the coherence channel Φ and the pressure channel Ψ were being derived from the same output stream, making the coupling circular ([Result 005](docs/empirical_result_005.md)).
+The repository is organized in three independent layers. Each has its own
+validation status and own domain of application. They are not collapsible
+into one another — that separation is itself an experimental finding.
 
-**3. An independent prompt-pressure channel Ψ restores genuine dynamics.**
-Extracting Ψ directly from the input prompt *before* generation — independent of the output-derived Φ — makes Δ = |Φ − Ψ| a real coupling between environmental demand and generative response, and restores dynamic discrimination in the v2 pipeline ([Result 006](docs/empirical_result_006.md)).
+### Layer 1 — Logprob Geometry
 
-**4. Preregistered onset experiment: the form of pressure determines the dynamic regime.**
-Across 50 neutral topics and 150 long trajectories, with three memory kernels (β = 0.3 / 0.6 / 0.9):
+Extracts rigidity, uncertainty, margin, and entropy-volatility metrics from
+token-level logprob distributions. Discriminates prompt families by
+generation structure, not by content truth.
 
-- **Contradictory pressure** produces sustained post-onset growth of long-memory tension Ξ — positive difference-in-differences in 50/50 topics at every β (mean DiD: +0.333 / +0.198 / +0.119).
-- **Saturation pressure** does not accumulate tension; it consumes margin and truncates the trajectory — survival below control in 50/50 topics, with 0/50 completing the post-onset stage.
+- **Domain:** single-response analysis.
+- **Validation status:** stable across replications.
+- **Discriminative power:** confirmed.
 
-Ψ does not induce a homogeneous Ξ response: the *type* of pressure determines the regime. This dissociation is invisible to event counting and is the core claim of trajectory-level structural monitoring. ([Result 007](docs/empirical_result_007.md))
+### Layer 2 — PRAMA Dynamics
 
-**Status.** These results come from gpt-4o-mini, DeepSeek and Gemini pipelines at modest scale. They establish internal consistency and a reproducible dissociation between pressure types; they do **not** constitute calibrated risk scores. Known operational limits are listed in [`docs/failure_modes.md`](docs/failure_modes.md). Short trajectories are protected from terminal-regime false positives by the `CALIBRATING / INSUFFICIENT_HISTORY` guard, validated in [`docs/regime_benchmark.md`](docs/regime_benchmark.md).
+Aptadynamic engine that integrates tension accumulation (Ξ), permissivity
+decay (λ), threshold contraction (Θ), and constitutional rotation (ι-κ-ρ)
+over time series.
 
-This repository is organized as a Python package under `src/aptadynamik`.
+- **Domain:** long time series (50+ steps): multi-turn conversation,
+  production monitoring, training dynamics.
+- **Validation status:** verified offline (4/4 synthetic scenarios). Not
+  validated on single-response logprob trajectories — 16 windows are
+  insufficient for accumulator dynamics.
+- **Discriminative power on single responses:** not confirmed.
+
+### Layer 3 — Verification
+
+Tests whether Layer 2 adds discriminative power over Layer 1 for a given
+domain. For single-response logprob analysis, the answer is currently no.
+For longer time series, the question remains open.
+
+---
+
+## Empirical findings
+
+### Replication summary (8 runs, GPT-4o-mini, N=3-5 per family per run)
+
+| Metric (aggregate) | Canonical | Fictional | Contradictory | Saturation |
+|--------------------|-----------|-----------|---------------|------------|
+| Rigidity | 0.875 | 0.643 | 0.727 | 0.316 |
+| Uncertainty | 0.005 | 0.058 | 0.039 | 0.241 |
+| Entropy std | 0.232 | 0.414 | 0.374 | 0.484 |
+| Entropy range | 0.645 | 1.174 | 1.026 | 1.345 |
+| Margin | 0.610 | 0.753 | 0.715 | 0.877 |
+| Xi / window | 0.133 | 0.121 | 0.136 | 0.124 |
+
+### Test stability across 8 replications
+
+| Test | Stability | Status |
+|------|-----------|--------|
+| Rigidity gradient: canonical > contradictory > fictional > saturation | 8/8 | strong |
+| Margin: contradictory < fictional | 7/8 | strong |
+| Entropy std: saturation > canonical | 6/8 | moderate |
+| Entropy range: saturation > canonical | 6/8 | moderate |
+| Xi/window: structural > semantic | 5/8 | weak |
+| Xi/window: saturation > canonical | 1/8 | not stable |
+
+### What this means
+
+**Logprob geometry metrics discriminate stress families.** The rigidity
+gradient is perfectly monotonic across all 8 replications. The distinction
+between semantic stress (fiction) and structural stress (contradiction,
+saturation) is measurable in the volatility of the logprob distribution
+itself — not in any derived dynamical quantity.
+
+**PRAMA xi/window does not add reliable discrimination over raw geometry
+for single-response analysis.** Range of xi/window across families is
+0.012 against a base of 0.130 — signal-to-noise insufficient. This is not
+an engine failure: the engine works correctly when given structurally
+distinct inputs and long enough trajectories (verified 4/4 offline). It is
+a domain-mismatch finding: 16 windows of similar geometric inputs do not
+amplify into distinct trajectories.
+
+**The honest separation is the result.** Layer 1 works for what Layer 1
+does. Layer 2 needs its own domain. Both are kept because both are real.
+
+---
+
+## Repository structure
+
+```
+src/aptadynamik/                      # Source package
+benchmarks/prama_components_v0.2/     # Component benchmarks
+docs/                                 # Method, mapping, philosophy, failure modes
+examples/                             # Runnable demos
+frontend/                             # Visualization layer for multi-turn experiments
+protocols/                            # Experimental protocols (prompt families, configs)
+results/                              # Outputs from replication runs
+scripts/                              # Trajectory analysis, replication tooling
+tests/                                # Unit tests + offline verification (4/4)
+.github/workflows/                    # CI
+```
+
+---
 
 ## Install
 
@@ -35,68 +111,115 @@ This repository is organized as a Python package under `src/aptadynamik`.
 python -m pip install -e .
 ```
 
-For the Gemini demo:
+For pipelines that hit external APIs:
 
 ```bash
 python -m pip install -r requirements.txt
 ```
 
-## Offline Verification
+---
+
+## Offline verification
+
+Confirms the engine discriminates structurally distinct synthetic inputs.
 
 ```bash
 prama-verify
 ```
 
-or:
+Writes `results/results.json`. Should report `4/4 tests passed`.
 
-```bash
-python examples/run_offline_verify.py
-```
+This verifies Layer 2 in isolation — the engine itself, not its mapping
+from logprobs.
 
-The offline run writes `results/results.json` and should report `4/4 tests passed`.
+---
 
-## Gemini Pipeline
+## Pipelines
 
-Set an API key and run:
+### Gemini (free tier, requires API key)
 
 ```bash
 export GEMINI_API_KEY="your-key"
 prama-gemini
 ```
 
-PowerShell:
+### OpenAI
 
-```powershell
-$env:GEMINI_API_KEY="your-key"
-prama-gemini
+```bash
+export OPENAI_API_KEY="sk-..."
+python -m aptadynamik.pipelines.v2
 ```
 
-The Gemini pipeline writes timestamped JSON and CSV outputs to `results/`.
+Both write timestamped JSON and CSV outputs to `results/`.
 
-## DeepSeek Pipeline
+### Replication analysis
 
-DeepSeek uses the OpenAI SDK with `base_url="https://api.deepseek.com"` and writes a PRAMA-compatible `raw.json`.
+After running the v2 pipeline multiple times:
 
-PowerShell:
-
-```powershell
-$env:DEEPSEEK_API_KEY="your-key"
-python examples\run_deepseek_demo.py --output-dir results\deepseek_smoke
-python scripts\prama_components_runner.py --from-raw results\deepseek_smoke\raw.json --output-dir results\deepseek_smoke\prama --calib-window 1
+```bash
+python scripts/analyze_v2_replications.py
 ```
+
+Produces aggregate means, per-run test results, and stability scores
+across runs.
+
+---
+
+## Open questions
+
+Layer 2 is not invalidated. It is unvalidated for single-response analysis
+and untested in its natural domain. The three candidate domains:
+
+- **Multi-turn conversation monitoring:** each turn = 1 step. 40-60 turns
+  provides sufficient history. Dynamic channel = prompt complexity;
+  symbolic channel = response quality metrics from Layer 1.
+- **Production endpoint monitoring:** each request = 1 step over hours
+  and days. Dynamic = load; symbolic = quality aggregate.
+- **Training dynamics:** each epoch or batch = 1 step. Dynamic = gradient
+  magnitude; symbolic = validation metrics.
+
+Each of these has structurally independent input channels and time series
+long enough for accumulator dynamics, threshold contraction, and
+constitutional rotation to operate as designed.
+
+---
 
 ## Documentation
 
-- `docs/quickstart.md`
-- `docs/method.md`
-- `docs/logprob_mapping.md`
-- `docs/failure_modes.md`
-- `docs/philosophy.md`
+- `docs/quickstart.md` — installation and first run
+- `docs/method.md` — technical method description
+- `docs/logprob_mapping.md` — how token-level signals enter the engine
+- `docs/failure_modes.md` — what doesn't work and why
+- `docs/philosophy.md` — aptadynamic framework
 
-- License
+---
 
-This project is released under the GNU Affero General Public License v3.0 (AGPL-3.0).
+## What this repository is not
 
-Commercial licensing and research collaborations may be available separately.
+This repo contains the measurement and monitoring tooling. The full
+aptadynamic philosophical corpus, the formal mathematical proofs of the
+viability framework, and the Rust reference implementation are documented
+separately and are not redistributed here.
 
+---
 
+## License
+
+Released under the GNU Affero General Public License v3.0 (AGPL-3.0).
+
+Commercial licensing and research collaborations may be available
+separately. Contact the author.
+
+---
+
+## Citation
+
+```
+@software{gacj2026aptadynamik,
+  author = {G.A.C.J.},
+  title  = {{AptadynamiK / PRAMA Protokol: Structural viability monitoring
+             for LLM generation trajectories via logprob-derived dynamics}},
+  year   = {2026},
+  url    = {https://github.com/gacj0901/Aptadynamik-PRAMA-Protokol-ProbLog_Monitor}
+}
+```
