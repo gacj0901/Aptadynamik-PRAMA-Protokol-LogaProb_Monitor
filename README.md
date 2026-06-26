@@ -245,6 +245,6 @@ separately. Contact the author.
   title  = {{logaprob: PRAMA Protokol applied to LLM generation
              via logarithmic probabilities}},
   year   = {2026},
-  url    = {https://github.com/gacj0901/logaprob}
+  url    = {https://github.com/gacj0901/Aptadynamik-PRAMA-Protokol-LogaProb_Monitor}
 }
 ```
